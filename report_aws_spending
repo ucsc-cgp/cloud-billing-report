@@ -40,7 +40,7 @@ $aws_accounts{'prod'} = '12345';
 # The following account bills against an internal AWS account for the
 # Free Public Dataset promotion
 
- 
+
 my $csv = Text::CSV->new({ sep_char => ',' });
 
 # Initialize date variables
@@ -64,7 +64,7 @@ my $conn = Amazon::S3->new({
 	secure			=> 1,
 	retry			=> 1,
 });
- 
+
 my $s3_file = "862902209576-aws-cost-allocation-$s3_file_date";
 my $local_file = "/root/aws-reporting/862902209576-aws-cost-allocation-$local_file_date";
 my $s3_detailed_file = "862902209576-aws-billing-detailed-line-items-with-resources-and-tags-$s3_file_date.zip";
@@ -100,12 +100,12 @@ open(MAIL, '>', "/tmp/mailtemp.txt");
 # Define some functions to be used later
 
 sub owner_search {
-	
+
 	seek $data_detailed, 0, 0;
 	while (my $line_detailed = <$data_detailed>) {
 		chomp $line_detailed;
 		if ($csv->parse($line_detailed)) {
-			my @fields_detailed = $csv->fields();		
+			my @fields_detailed = $csv->fields();
 			if ($_[0] eq $fields_detailed[21]) {
 				if (!($fields_detailed[25])) {
 					$one_up = "untagged";
@@ -117,7 +117,7 @@ sub owner_search {
 					last;
 				}
 			}
-			
+
 		}
 	}
 }
@@ -147,7 +147,7 @@ foreach my $k (sort keys %aws_accounts) {
 my $v = $aws_accounts{$k};
 
 # Initialize all tallies to 0.00
- 
+
 $sum = 0.00;
 $data_tally = 0.00;
 $s3_tally = 0.00;
@@ -227,7 +227,7 @@ open(my $smallfile, '>', $tmpfile) or die "Could not open '$tmpfile' $!\n";
 
 while (my $line_detailed = <$data_detailed>) {
 	my @line_elements = split /,/, $line_detailed;
-	
+
 	if (($line_detailed =~ /RunInstances/) && ($line_elements[2] eq "\"$v\"")) {
 		print $smallfile "$line_detailed";
 	}
@@ -243,9 +243,9 @@ open($data_detailed, '<', $tmpfile) or die "Could not open '$tmpfile' $!\n";
 open(my $data, '<', $local_file) or die "Could not open '$local_file' $!\n";
 while (my $line = <$data>) {
 	chomp $line;
- 
+
 	if ($csv->parse($line)) {
- 
+
 		my @fields = $csv->fields();
 
 		# Exclude the first couple and the last couple lines of the file
@@ -253,9 +253,9 @@ while (my $line = <$data>) {
 		if (($fields[0] =~ /see your/) || ($fields[0] =~ /InvoiceID/) || ($fields[0] eq "")) {
 			next;
 		}
-		
-		# Exclude the Invoice Cost Summary	
-	
+
+		# Exclude the Invoice Cost Summary
+
 		if ($fields[19] =~ /Total amount for invoice Estimated/) {
 			next;
 		}
@@ -277,8 +277,8 @@ while (my $line = <$data>) {
 		}
 
 		# Round dollar amount to two decimal places
-	
-		$fields[29] = sprintf("%.2f", $fields[29]);		
+
+		$fields[29] = sprintf("%.2f", $fields[29]);
 
 		# Add up total money
 
@@ -346,14 +346,14 @@ while (my $line = <$data>) {
 
 			} elsif ($fields[32] =~ /^i\-/) {
 
-				my $search = $fields[32];	
-				
+				my $search = $fields[32];
+
 				while (1) {
 					 if ($search =~ /^i\-/) {
 						if ($ec2_mapping{$search}) {
 #							print "BANG1 \t$search is owned by $ec2_mapping{$search}\n";
 							$search = $ec2_mapping{$search};
-						} else {	
+						} else {
 							my $found = owner_search($search);
 							if ($found eq "") {
 								$found = "EBS_Volumes_Without_Owner";
@@ -361,8 +361,8 @@ while (my $line = <$data>) {
 #							print "BANG2 \t$search is owned by $found\n";
 							$ec2_mapping{$search} = "$found";
 							$search = "$found";
-						}	
-					} else {	
+						}
+					} else {
 						$fields[32] = $search;
 						last;
 					}
@@ -373,7 +373,7 @@ while (my $line = <$data>) {
 					$ec2_tally{$fields[32]} = $fields[29];
 				} else {
 #					print "BANG4 Found Original Owner \= $fields[32] : for cost \$$fields[29]\n\n";
-					$ec2_tally{$fields[32]} += $fields[29];	
+					$ec2_tally{$fields[32]} += $fields[29];
 				}
 
 			} elsif (!($ec2_tally{$fields[32]})) {
@@ -381,7 +381,7 @@ while (my $line = <$data>) {
 				if (!($fields[32] =~ /[a-zA-Z]/)) {
 #					print "Found Original Owner \= untagged : for cost \$$fields[29]\n\n";
 					$ec2_tally{'untagged'} += $fields[29];
-				} else {	
+				} else {
 					$ec2_tally{$fields[32]} = $fields[29];
 				}
 			} else {
@@ -395,7 +395,7 @@ while (my $line = <$data>) {
 		}
 
 		$sum += $fields[29];
- 
+
 	} else {
 
 	warn "Line could not be parsed: $line\n";
@@ -412,7 +412,7 @@ close($data_detailed);
 # We don't care about fractions of a cent
 # Then add up all the amounts to get the total for EC2 usage
 
-foreach my $val (keys %ec2_tally) { 
+foreach my $val (keys %ec2_tally) {
 	$ec2_tally{$val} = sprintf("%.2f", $ec2_tally{$val});
 	$ec2_total += $ec2_tally{$val};
 }
@@ -459,7 +459,7 @@ $grab->execute() or print "\nCouldn't execute statement: " . $grab->errstr . "\n
 
 if ($grab->rows > 0) {
 	while (my @data = $grab->fetchrow_array()) {
-		$data_diff = ($data_tally - $data[1]);	
+		$data_diff = ($data_tally - $data[1]);
 		$s3_diff = ($s3_tally - $data[2]);
 		$support_diff = ($support_dev_tally - $data[3]);
 		$route53_diff = ($route53_tally - $data[4]);
@@ -506,12 +506,12 @@ if (($day eq "01") || ($grab->rows == 0)) {
 	if ($day eq "01") {
 		print MAIL "Amazon Web Services Report for $first_day\n";
 		print MAIL "Being the first of the month, all tallies are reset\!\n\n";
-	} elsif ($grab->rows == 0) { 
+	} elsif ($grab->rows == 0) {
 		print MAIL "Amazon Web Services Report from $first_day - $current_day\n";
 		print MAIL "\*\*\* NOTICE: Unable to grab yesterday\'s tallies for comparison\n";
 		print MAIL "from the database, only today\'s tallies are shown below.\n\n";
 	}
-		
+
 
 	print MAIL "EC2 Breakdown by Owner:\n";
 
@@ -639,12 +639,12 @@ if (($day eq "01") || ($grab->rows == 0)) {
 
 	printf MAIL ("%-35s", "Amazon Lambda Service Total");
 	printf MAIL ("%-13s", "\= \$$lambda_tally");
-	print_diff($lambda_diff);	
+	print_diff($lambda_diff);
 
 	printf MAIL ("%-35s", "Amazon CloudTrail Service Total");
 	printf MAIL ("%-13s", "\= \$$cloudtrail_tally");
-	print_diff($cloudtrail_diff);	
-	
+	print_diff($cloudtrail_diff);
+
 	printf MAIL ("%-35s", "Amazon CloudWatch Service Total");
 	printf MAIL ("%-13s", "\= \$$cloudwatch_tally");
 	print_diff($cloudwatch_diff);
@@ -740,12 +740,12 @@ if ($grab->rows == 0) {
 	$connect->do("INSERT INTO \`$k\`
 	(report_date, data_tally, s3_tally, support_dev_tally, route53_tally, datapipeline_tally,
 	awskms_tally, simpledb_tally, cloudwatch_tally, cloudtrail_tally,
-	queueservice_tally, notification_tally, lambda_tally, registrar_tally, 
+	queueservice_tally, notification_tally, lambda_tally, registrar_tally,
 	ec2_total, amazonapigateway_tally, amazondynamodb_tally, amazoneks_tally,
 	amazones_tally, amazonrds_tally, amazonstates_tally, amazonvpc_tally,
-	awssecretsmanager_tally, cloudfront_tally, guardduty_tally, 
+	awssecretsmanager_tally, cloudfront_tally, guardduty_tally,
 	awsconfig_tally, costexplorer_tally, support_bus_tally, xray_tally,
-	awsglue_tally, unknown_tally, grand_total) VALUES 
+	awsglue_tally, unknown_tally, grand_total) VALUES
 	(\"$today_mysqlformat\", \"$data_tally\", \"$s3_tally\", \"$support_dev_tally\", \"$route53_tally\",
 	\"$datapipeline_tally\", \"$awskms_tally\", \"$simpledb_tally\", \"$cloudwatch_tally\",
 	\"$cloudtrail_tally\", \"$queueservice_tally\", \"$notification_tally\",
@@ -779,7 +779,7 @@ close(MAIL);
 
 # TODO: Data removed
 my $to = 'removed@example.com';
-	
+
 # TODO: Data removed
 my $from = 'root@example.com';
 my $subject = "AWS Report for $current_day";
@@ -794,7 +794,7 @@ print MAILSEND "Subject: $subject\n\n";
 if ($day eq "01") {
 	print MAILSEND "Amazon Web Services Report for $first_day\n";
 	print MAILSEND "Being the first of the month, all tallies are reset\!\n\n";
-} else { 
+} else {
 	print MAILSEND "Amazon Web Services Report from $first_day - $current_day\n\n";
 }
 
@@ -822,9 +822,9 @@ while (my $line_detailed = <$data_detailed>) {
 		if (($fields[0] =~ /see your/) || ($fields[0] =~ /InvoiceID/) || ($fields[0] eq "")) {
 			next;
 		}
-		
-		# Exclude the Invoice Cost Summary	
-	
+
+		# Exclude the Invoice Cost Summary
+
 		if ($fields[19] =~ /Total amount for invoice Estimated/) {
 			next;
 		}
@@ -842,12 +842,12 @@ while (my $line_detailed = <$data_detailed>) {
 			} else {
 				$project_spending{$fields[23]} = $fields[20];
 			}
-			
+
 		} else {
 			next;
 		}
 
-	}	
+	}
 }
 
 print MAILSEND "\n===PROJECT BASED ACCOUNTING BASED ON THE \"Name\" TAG ===\n\n";
