@@ -8,29 +8,28 @@ use warnings;
 use Amazon::S3;
 use Text::CSV;
 use DBI;
+use Hash::Util ('lock_keys');
 
 chdir('/root/aws-reporting');
 
-our (%ec2_tally,$data_tally,$s3_tally,$sum,$support_dev_tally,$route53_tally);
-our ($datapipeline_tally,$awskms_tally,$ec2_total,$simpledb_tally,$registrar_tally);
-our ($cloudtrail_tally, $cloudwatch_tally, $queueservice_tally, $notification_tally);
-our ($lambda_tally,$registrar_diff,$cloudfront_tally,$guardduty_tally,$awsconfig_tally);
-our ($costexplorer_tally,$support_bus_tally,$xray_tally,$cloudfront_diff,$guardduty_diff);
-our ($awsconfig_diff,$costexplorer_diff,$support_bus_diff,$xray_diff,$unknown_tally,$unknown_diff);
-our ($awsglue_tally, $awsglue_diff);
+our (%ec2_tally, $sum, %ec2_mapping, $one_up, $ec2_total, $ec2_diff);
+our (%aws_accounts, %project_spending, $data_detailed, $grand_diff);
+our ($all_total, %totals, %tally, %diff);
 
-our ($amazonapigateway_tally,$amazondynamodb_tally,$amazoneks_tally,$amazones_tally);
-our ($amazonrds_tally,$amazonstates_tally,$amazonvpc_tally,$awssecretsmanager_tally);
-our ($amazonapigateway_diff,$amazondynamodb_diff,$amazoneks_diff,$amazones_diff);
-our ($amazonrds_diff,$amazonstates_diff,$amazonvpc_diff,$awssecretsmanager_diff);
-
-
-our ($data_diff,$s3_diff,$support_diff,$route53_diff,$datapipeline_diff,$awskms_diff);
-our ($simpledb_diff,$cloudwatch_diff,$cloudtrail_diff,$queueservice_diff,$notification_diff);
-our (%ec2_mapping,$one_up);
-our (%aws_accounts,%project_spending,$data_detailed,$grand_diff,$lambda_diff,$ec2_diff);
-our ($all_total, %totals);
-
+my @SERVICES = ('Data Transfer', 'S3 Storage', 'AWS Developer Support',
+				'Amazon Route 53', 'Amazon Registrar', 'Amazon Data Pipeline',
+				'AWS Key Management Services', 'Amazon SimpleDB',
+				'Amazon Lambda Service', 'Amazon CloudTrail Service',
+				'Amazon CloudWatch Service', 'Amazon Simple Queue Service',
+				'Amazon Notification Service', 'Amazon API Gateway Service',
+				'Amazon DynamoDB Service', 'Amazon Containers for Kubernetes',
+				'Amazon Elasticsearch Service', 'Amazon Relational Database Service',
+				'Amazon Step Functions Service', 'Amazon Virtual Private Cloud Service',
+				'Amazon Secrets Manager Service', 'Amazon CloudFront',
+				'Amazon Guard Duty', 'Amazon Config Service',
+				'Amazon Cost Explorer Service', 'Amazon Business Support',
+				'Amazon X-Ray Service', 'Amazon Glue Service',
+				'Unknown Services');
 
 # Initialize AWS Accounts and Account Numbers
 
@@ -53,7 +52,6 @@ while (my $line = <$accounts>) {
 my $csv = Text::CSV->new({ sep_char => ',' });
 
 # Initialize date variables
-
 chomp(my $current_day = `/usr/bin/date +\"\%B \%d, \%Y\"`);
 chomp(my $first_day = `/usr/bin/date +\"\%B 01, \%Y\"`);
 chomp(my $s3_file_date = `/usr/bin/date +\"\%Y-\%m.csv\"`);
@@ -109,7 +107,6 @@ open(MAIL, '>', "/tmp/mailtemp.txt");
 # Define some functions to be used later
 
 sub owner_search {
-
 	seek $data_detailed, 0, 0;
 	while (my $line_detailed = <$data_detailed>) {
 		chomp $line_detailed;
@@ -132,21 +129,19 @@ sub owner_search {
 }
 
 sub print_diff {
+	$_[0] = sprintf("%.2f", $_[0]);
 	if ($_[0] > 0) {
-		$_[0] = sprintf("%.2f", $_[0]);
-		print MAIL ": up \$$_[0] from yesterday\n";
+		return("+\$$_[0]");
 	} elsif ($_[0] < 0) {
 		my $absolute = abs($_[0]);
-		$absolute = sprintf("%.2f", $absolute);
-		print MAIL ": down \$$absolute from yesterday\n";
+		return("-\$$absolute");
 	} else {
-		print MAIL ": same as yesterday\n";
+		return("&plusmn;\$0.00");
 	}
 }
 
 
 # Initialize database connection
-
 my $connect = DBI->connect("DBI:mysql:database=$database;host=$host", "$mysqluser", "$pw", {'RaiseError' => 1});
 
 ########## START ACCOUNT LOOP THROUGH HASH %aws_accounts
@@ -156,75 +151,22 @@ foreach my $k (sort keys %aws_accounts) {
 my $v = $aws_accounts{$k};
 
 # Initialize all tallies to 0.00
-
+foreach my $service (@SERVICES) {
+	$tally{$service} = 0.00;
+	$diff{$service} = 0.00;
+}
 $sum = 0.00;
-$data_tally = 0.00;
-$s3_tally = 0.00;
-$support_dev_tally = 0.00;
-$route53_tally = 0.00;
-$datapipeline_tally = 0.00;
-$awskms_tally = 0.00;
-$simpledb_tally = 0.00;
-$cloudwatch_tally = 0.00;
-$cloudtrail_tally = 0.00;
-$queueservice_tally = 0.00;
-$notification_tally = 0.00;
-$lambda_tally = 0.00;
-$registrar_tally = 0.00;
-$amazonapigateway_tally = 0.00;
-$amazondynamodb_tally = 0.00;
-$amazoneks_tally = 0.00;
-$amazones_tally = 0.00;
-$amazonrds_tally = 0.00;
-$amazonstates_tally = 0.00;
-$amazonvpc_tally = 0.00;
-$awssecretsmanager_tally = 0.00;
-$cloudfront_tally = 0.00;
-$guardduty_tally = 0.00;
-$awsconfig_tally = 0.00;
-$costexplorer_tally = 0.00;
-$support_bus_tally = 0.00;
-$xray_tally = 0.00;
-$awsglue_tally = 0.00;
-$unknown_tally = 0.00;
-
-$data_diff = 0.00;
-$s3_diff = 0.00;
-$support_diff = 0.00;
-$route53_diff = 0.00;
-$datapipeline_diff = 0.00;
-$awskms_diff = 0.00;
-$simpledb_diff = 0.00;
-$cloudwatch_diff = 0.00;
-$cloudtrail_diff = 0.00;
-$queueservice_diff = 0.00;
-$notification_diff = 0.00;
-$lambda_diff = 0.00;
-$registrar_diff = 0.00;
-$grand_diff = 0.00;
-$lambda_diff = 0.00;
-$ec2_diff = 0.00;
-$amazonapigateway_diff = 0.00;
-$amazondynamodb_diff = 0.00;
-$amazoneks_diff = 0.00;
-$amazones_diff = 0.00;
-$amazonrds_diff = 0.00;
-$amazonstates_diff = 0.00;
-$amazonvpc_diff = 0.00;
-$awssecretsmanager_diff = 0.00;
-$cloudfront_diff = 0.00;
-$guardduty_diff = 0.00;
-$awsconfig_diff = 0.00;
-$costexplorer_diff = 0.00;
-$support_bus_diff = 0.00;
-$xray_diff = 0.00;
-$awsglue_diff = 0.00;
-$unknown_diff = 0.00;
-
 $ec2_total = 0.00;
 undef %ec2_tally;
-
 $ec2_tally{'untagged'} = 0.00;
+
+# Now that %tally and %diff are initialized with keys from @SERVICES, we lock
+# the keys so that trying to read or write to a key that doesn't already exist
+# will cause an error. Because references to all of the keys in %tally and
+# %diff sometimes need to be hardocded, this is helpful in detecting misspellings
+# of key names.
+lock_keys(%tally);
+lock_keys(%diff);
 
 # Open the detailed file for recursive owner searching and set up searching function
 # This also reduces the file size of the detailed file by 90%, making the program
@@ -290,63 +232,62 @@ while (my $line = <$data>) {
 		$fields[29] = sprintf("%.2f", $fields[29]);
 
 		# Add up total money
-
 		if ($fields[12] =~ /AmazonS3/) {
-			$s3_tally += $fields[29];
+			$tally{"S3 Storage"} += $fields[29];
 		} elsif ($fields[12] =~ /AWSCloudTrail/) {
-			$cloudtrail_tally += $fields[29];
+			$tally{"Amazon CloudTrail Service"} += $fields[29];
 		} elsif ($fields[12] =~ /AmazonCloudWatch/) {
-			$cloudwatch_tally += $fields[29];
+			$tally{"Amazon CloudWatch Service"} += $fields[29];
 		} elsif ($fields[12] =~ /AmazonSNS/) {
-			$notification_tally += $fields[29];
+			$tally{"Amazon Notification Service"} += $fields[29];
 		} elsif ($fields[12] =~ /AWSLambda/) {
-			$lambda_tally += $fields[29];
+			$tally{"Amazon Lambda Service"} += $fields[29];
 		} elsif ($fields[12] =~ /AWSQueueService/) {
-			$queueservice_tally += $fields[29];
+			$tally{"Amazon Simple Queue Service"} += $fields[29];
 		} elsif ($fields[12] =~ /AWSDataTransfer/) {
-			$data_tally += $fields[29];
+			$tally{"Data Transfer"} += $fields[29];
 		} elsif ($fields[12] =~ /AWSDeveloperSupport/) {
-			$support_dev_tally += $fields[29];
+			$tally{"AWS Developer Support"} += $fields[29];
 		} elsif ($fields[12] =~ /AmazonRoute53/) {
-			$route53_tally += $fields[29];
+			$tally{"Amazon Route 53"} += $fields[29];
 		} elsif ($fields[12] =~ /datapipeline/) {
-			$datapipeline_tally += $fields[29];
+			$tally{"Amazon Data Pipeline"} += $fields[29];
 		} elsif ($fields[12] =~ /awskms/) {
-			$awskms_tally += $fields[29];
+			$tally{"AWS Key Management Services"} += $fields[29];
 		} elsif ($fields[12] =~ /AmazonSimpleDB/) {
-			$simpledb_tally += $fields[29];
+			$tally{"Amazon SimpleDB"} += $fields[29];
 		} elsif ($fields[12] =~ /AmazonRegistrar/) {
-			$registrar_tally += $fields[29];
+			$tally{"Amazon Registrar"} += $fields[29];
 		} elsif ($fields[12] =~ /AmazonApiGateway/) {
-			$amazonapigateway_tally += $fields[29];
+			$tally{"Amazon API Gateway Service"} += $fields[29];
 		} elsif ($fields[12] =~ /AmazonDynamoDB/) {
-			$amazondynamodb_tally += $fields[29];
+			$tally{"Amazon DynamoDB Service"} += $fields[29];
 		} elsif ($fields[12] =~ /AmazonEKS/) {
-			$amazoneks_tally += $fields[29];
+			$tally{"Amazon Containers for Kubernetes"} += $fields[29];
 		} elsif ($fields[12] =~ /AmazonES/) {
-			$amazones_tally += $fields[29];
+			$tally{"Amazon Elasticsearch Service"} += $fields[29];
 		} elsif ($fields[12] =~ /AmazonRDS/) {
-			$amazonrds_tally += $fields[29];
+			$tally{"Amazon Relational Database Service"} += $fields[29];
 		} elsif ($fields[12] =~ /AmazonStates/) {
-			$amazonstates_tally += $fields[29];
+			$tally{"Amazon Step Functions Service"} += $fields[29];
 		} elsif ($fields[12] =~ /AmazonVPC/) {
-			$amazonvpc_tally += $fields[29];
+			$tally{"Amazon Virtual Private Cloud Service"} += $fields[29];
 		} elsif ($fields[12] =~ /AWSSecretsManager/) {
-			$awssecretsmanager_tally += $fields[29];
+			$tally{"Amazon Secrets Manager Service"} += $fields[29];
 		} elsif ($fields[12] =~ /AmazonCloudFront/) {
-			$cloudfront_tally += $fields[29];
+			$tally{"Amazon CloudFront"} += $fields[29];
 		} elsif ($fields[12] =~ /AmazonGuardDuty/) {
-			$guardduty_tally += $fields[29];
+			$tally{"Amazon Guard Duty"} += $fields[29];
 		} elsif ($fields[12] =~ /AWSConfig/) {
-			$awsconfig_tally += $fields[29];
+			$tally{"Amazon Config Service"} += $fields[29];
 		} elsif ($fields[12] =~ /AWSCostExplorer/) {
-			$costexplorer_tally += $fields[29];
+			$tally{"Amazon Cost Explorer Service"} += $fields[29];
 		} elsif ($fields[12] =~ /AWSSupportBusiness/) {
-			$support_bus_tally += $fields[29];
+			$tally{"Amazon Business Support"} += $fields[29];
 		} elsif ($fields[12] =~ /AWSXRay/) {
-			$xray_tally += $fields[29];
+			$tally{"Amazon X-Ray Service"} += $fields[29];
 		} elsif ($fields[12] =~ /AWSGlue/) {
-			$awsglue_tally += $fields[29];
+			$tally{"Amazon Glue Service"} += $fields[29];
 		} elsif ($fields[12] =~ /AmazonEC2/) {
 #			print "Searching for owner of new EC2 line item...\n";
 			if (!($fields[32] =~ /[a-zA-Z]/)) {
@@ -400,20 +341,16 @@ while (my $line = <$data>) {
 		} else {
 			# We haven't seen the service before, flag as unknown and tally unknown costs
 #			print "Found unknown service!: $fields[12]\n";
-			$unknown_tally += $fields[29];
+			$tally{"Unknown Services"} += $fields[29];
 		}
 
 		$sum += $fields[29];
-
 	} else {
-
-	warn "Line could not be parsed: $line\n";
-
+		warn "Line could not be parsed: $line\n";
 	}
 }
 
 # Close the summary file and the detailed file handles
-
 close($data);
 close($data_detailed);
 
@@ -426,41 +363,6 @@ foreach my $val (keys %ec2_tally) {
 	$ec2_total += $ec2_tally{$val};
 }
 
-# Normalize the numbers in the tallies to two decimal places
-
-$data_tally = sprintf("%.2f", $data_tally);
-$s3_tally = sprintf("%.2f", $s3_tally);
-$support_dev_tally = sprintf("%.2f", $support_dev_tally);
-$route53_tally = sprintf("%.2f", $route53_tally);
-$datapipeline_tally = sprintf("%.2f", $datapipeline_tally);
-$awskms_tally = sprintf("%.2f", $awskms_tally);
-$simpledb_tally = sprintf("%.2f", $simpledb_tally);
-$lambda_tally = sprintf("%.2f", $lambda_tally);
-$registrar_tally = sprintf("%.2f", $registrar_tally);
-$cloudtrail_tally = sprintf("%.2f", $cloudtrail_tally);
-$cloudwatch_tally = sprintf("%.2f", $cloudwatch_tally);
-$queueservice_tally = sprintf("%.2f", $queueservice_tally);
-$notification_tally = sprintf("%.2f", $notification_tally);
-$amazonapigateway_tally = sprintf("%.2f", $amazonapigateway_tally);
-$amazondynamodb_tally = sprintf("%.2f", $amazondynamodb_tally);
-$amazoneks_tally = sprintf("%.2f", $amazoneks_tally);
-$amazones_tally = sprintf("%.2f", $amazones_tally);
-$amazonrds_tally = sprintf("%.2f", $amazonrds_tally);
-$amazonstates_tally = sprintf("%.2f", $amazonstates_tally);
-$amazonvpc_tally = sprintf("%.2f", $amazonvpc_tally);
-$awssecretsmanager_tally = sprintf("%.2f", $awssecretsmanager_tally);
-$cloudfront_tally = sprintf("%.2f", $cloudfront_tally);
-$guardduty_tally = sprintf("%.2f", $guardduty_tally);
-$awsconfig_tally = sprintf("%.2f", $awsconfig_tally);
-$costexplorer_tally = sprintf("%.2f", $costexplorer_tally);
-$support_bus_tally = sprintf("%.2f", $support_bus_tally);
-$xray_tally = sprintf("%.2f", $xray_tally);
-$awsglue_tally = sprintf("%.2f", $awsglue_tally);
-$unknown_tally = sprintf("%.2f", $unknown_tally);
-
-
-$sum = sprintf("%.2f", $sum);
-
 # Grab yesterday's values from the database to compare with today's values
 
 my $grab = $connect->prepare("SELECT * FROM \`$k\` WHERE report_date = \"$yesterday_mysqlformat\"");
@@ -468,275 +370,130 @@ $grab->execute() or print "\nCouldn't execute statement: " . $grab->errstr . "\n
 
 if ($grab->rows > 0) {
 	while (my @data = $grab->fetchrow_array()) {
-		$data_diff = ($data_tally - $data[1]);
-		$s3_diff = ($s3_tally - $data[2]);
-		$support_diff = ($support_dev_tally - $data[3]);
-		$route53_diff = ($route53_tally - $data[4]);
-		$datapipeline_diff = ($datapipeline_tally - $data[5]);
-		$awskms_diff = ($awskms_tally - $data[6]);
-		$simpledb_diff = ($simpledb_tally - $data[7]);
-		$cloudwatch_diff = ($cloudwatch_tally - $data[8]);
-		$cloudtrail_diff = ($cloudtrail_tally - $data[9]);
-		$queueservice_diff = ($queueservice_tally - $data[10]);
-		$notification_diff = ($notification_tally - $data[11]);
-		$lambda_diff = ($lambda_tally - $data[12]);
-		$registrar_diff = ($registrar_tally - $data[13]);
+		$diff{"Data Transfer"} = $tally{"Data Transfer"} - $data[1];
+		$diff{"S3 Storage"} = $tally{"S3 Storage"} - $data[2];
+		$diff{"AWS Developer Support"} = $tally{"AWS Developer Support"} - $data[3];
+		$diff{"Amazon Route 53"} = $tally{"Amazon Route 53"} - $data[4];
+		$diff{"Amazon Data Pipeline"} = $tally{"Amazon Data Pipeline"} - $data[5];
+		$diff{"AWS Key Management Services"} = $tally{"AWS Key Management Services"} - $data[6];
+		$diff{"Amazon SimpleDB"} = $tally{"Amazon SimpleDB"} - $data[7];
+		$diff{"Amazon CloudWatch Service"} = $tally{"Amazon CloudWatch Service"} - $data[8];
+		$diff{"Amazon CloudTrail Service"} = $tally{"Amazon CloudTrail Service"} - $data[9];
+		$diff{"Amazon Simple Queue Service"} = $tally{"Amazon Simple Queue Service"} - $data[10];
+		$diff{"Amazon Notification Service"} = $tally{"Amazon Notification Service"} - $data[11];
+		$diff{"Amazon Lambda Service"} = $tally{"Amazon Lambda Service"} - $data[12];
+		$diff{"Amazon Registrar"} = $tally{"Amazon Registrar"} - $data[13];
 		$ec2_diff = ($ec2_total - $data[14]);
-
-		$amazonapigateway_diff = ($amazonapigateway_tally - $data[15]);
-		$amazondynamodb_diff = ($amazondynamodb_tally - $data[16]);
-		$amazoneks_diff = ($amazoneks_tally - $data[17]);
-		$amazones_diff = ($amazones_tally - $data[18]);
-		$amazonrds_diff = ($amazonrds_tally - $data[19]);
-		$amazonstates_diff = ($amazonstates_tally - $data[20]);
-		$amazonvpc_diff = ($amazonvpc_tally - $data[21]);
-		$awssecretsmanager_diff = ($awssecretsmanager_tally - $data[22]);
-
-		$cloudfront_diff = ($cloudfront_tally - $data[23]);
-		$guardduty_diff = ($guardduty_tally - $data[24]);
-		$awsconfig_diff = ($awsconfig_tally - $data[25]);
-		$costexplorer_diff = ($costexplorer_tally - $data[26]);
-		$support_bus_diff = ($support_bus_tally - $data[27]);
-		$xray_diff = ($xray_tally - $data[28]);
-		$awsglue_diff = ($awsglue_tally - $data[29]);
-
-		$unknown_diff = ($unknown_tally - $data[30]);
-
+		$diff{"Amazon API Gateway Service"} = $tally{"Amazon API Gateway Service"} - $data[15];
+		$diff{"Amazon DynamoDB Service"} = $tally{"Amazon DynamoDB Service"} - $data[16];
+		$diff{"Amazon Containers for Kubernetes"} = $tally{"Amazon Containers for Kubernetes"} - $data[17];
+		$diff{"Amazon Elasticsearch Service"} = $tally{"Amazon Elasticsearch Service"} - $data[18];
+		$diff{"Amazon Relational Database Service"} = $tally{"Amazon Relational Database Service"} - $data[19];
+		$diff{"Amazon Step Functions Service"} = $tally{"Amazon Step Functions Service"} - $data[20];
+		$diff{"Amazon Virtual Private Cloud Service"} = $tally{"Amazon Virtual Private Cloud Service"} - $data[21];
+		$diff{"Amazon Secrets Manager Service"} = $tally{"Amazon Secrets Manager Service"} - $data[22];
+		$diff{"Amazon CloudFront"} = $tally{"Amazon CloudFront"} - $data[23];
+		$diff{"Amazon Guard Duty"} = $tally{"Amazon Guard Duty"} - $data[24];
+		$diff{"Amazon Config Service"} = $tally{"Amazon Config Service"} - $data[25];
+		$diff{"Amazon Cost Explorer Service"} = $tally{"Amazon Cost Explorer Service"} - $data[26];
+		$diff{"Amazon Business Support"} = $tally{"Amazon Business Support"} - $data[27];
+		$diff{"Amazon X-Ray Service"} = $tally{"Amazon X-Ray Service"} - $data[28];
+		$diff{"Amazon Glue Service"} = $tally{"Amazon Glue Service"} - $data[29];
+		$diff{"Unknown Services"} = $tally{"Unknown Services"} - $data[30];
 		$grand_diff = ($sum - $data[31]);
 	}
 }
 
-print MAIL "-------------------------------------------------------------------\n";
-print MAIL "***** REPORT FOR ACCOUNT \"$k\":\n";
-print MAIL "-------------------------------------------------------------------\n\n";
+# To get anchor links to function properly in Gmail, we need to use a certain
+# a[href][name] syntax. For the record, this is:
+#   1. Not compliant with the HTML5 standard, which does not specify a `name`
+#      attribute for <a>
+#   2. Not compliant with any HTML standard, as "XML empty element syntax isn't
+#      supported in any flavor of HTML served as text/html"
+#   3. Is against Google's own semantic markup guidelines. In fact, this markup
+#      is something that Google explicitly recommends against.
+#   4. Not documented anywhere in Google's reference for HTML content in emails
+# And yes, I have tried literally everything else.
+print MAIL "<a name=\"$k\" id=\"$k\"></a><h2>Report for account $k</h2>";
 
-if (($day eq "01") || ($grab->rows == 0)) {
+my $no_results = $grab->rows == 0;
+my $is_first_day = $day eq "01";
+my $show_diff = not ($is_first_day || $no_results);
 
-	if ($day eq "01") {
-		print MAIL "Amazon Web Services Report for $first_day\n";
-		print MAIL "Being the first of the month, all tallies are reset\!\n\n";
-	} elsif ($grab->rows == 0) {
-		print MAIL "Amazon Web Services Report from $first_day - $current_day\n";
-		print MAIL "\*\*\* NOTICE: Unable to grab yesterday\'s tallies for comparison\n";
-		print MAIL "from the database, only today\'s tallies are shown below.\n\n";
-	}
-
-
-	print MAIL "EC2 Breakdown by Owner:\n";
-
-	for (keys %ec2_tally) {
-		printf MAIL ("\t%-35s", "\* $_");
-		printf MAIL ("%-13s\n", "\= \$$ec2_tally{$_}");
-	}
-
-	printf MAIL ("\n%-35s", "TOTAL FOR EC2");
-	$ec2_total = sprintf("%.2f", $ec2_total);
-	printf MAIL ("%-13s\n\n", "\= \$$ec2_total");
-
-	printf MAIL ("%-42s", "Data Transfer Total");
-	printf MAIL ("%-13s\n", "\= \$$data_tally");
-	printf MAIL ("%-42s", "S3 Storage Total");
-	printf MAIL ("%-13s\n", "\= \$$s3_tally");
-	printf MAIL ("%-42s", "AWS Developer Support Total");
-	printf MAIL ("%-13s\n", "\= \$$support_dev_tally");
-	printf MAIL ("%-42s", "Amazon Route 53 Total");
-	printf MAIL ("%-13s\n", "\= \$$route53_tally");
-	printf MAIL ("%-42s", "Amazon Registrar Total");
-	printf MAIL ("%-13s\n", "\= \$$registrar_tally");
-	printf MAIL ("%-42s", "Amazon Data Pipeline Total");
-	printf MAIL ("%-13s\n", "\= \$$datapipeline_tally");
-	printf MAIL ("%-42s", "AWS Key Management Services Total");
-	printf MAIL ("%-13s\n", "\= \$$awskms_tally");
-	printf MAIL ("%-42s", "Amazon SimpleDB Total");
-	printf MAIL ("%-13s\n", "\= \$$simpledb_tally");
-	printf MAIL ("%-42s", "Amazon Lambda Service Total");
-	printf MAIL ("%-13s\n", "\= \$$lambda_tally");
-	printf MAIL ("%-42s", "Amazon CloudTrail Service Total");
-	printf MAIL ("%-13s\n", "\= \$$cloudtrail_tally");
-	printf MAIL ("%-42s", "Amazon CloudWatch Service Total");
-	printf MAIL ("%-13s\n", "\= \$$cloudwatch_tally");
-	printf MAIL ("%-42s", "Amazon Simple Queue Service Total");
-	printf MAIL ("%-13s\n", "\= \$$queueservice_tally");
-	printf MAIL ("%-42s", "Amazon Notification Service Total");
-	printf MAIL ("%-13s\n", "\= \$$notification_tally");
-	printf MAIL ("%-42s", "Amazon API Gateway Service Total");
-	printf MAIL ("%-13s\n", "\= \$$amazonapigateway_tally");
-	printf MAIL ("%-42s", "Amazon DynamoDB Service Total");
-	printf MAIL ("%-13s\n", "\= \$$amazondynamodb_tally");
-	printf MAIL ("%-42s", "Amazon Containers for Kubernetes Total");
-	printf MAIL ("%-13s\n", "\= \$$amazoneks_tally");
-	printf MAIL ("%-42s", "Amazon Elasticsearch Service Total");
-	printf MAIL ("%-13s\n", "\= \$$amazones_tally");
-	printf MAIL ("%-42s", "Amazon Relational Database Service Total");
-	printf MAIL ("%-13s\n", "\= \$$amazonrds_tally");
-	printf MAIL ("%-42s", "Amazon Step Functions Service Total");
-	printf MAIL ("%-13s\n", "\= \$$amazonstates_tally");
-	printf MAIL ("%-42s", "Amazon Virtual Private Cloud Service Total");
-	printf MAIL ("%-13s\n", "\= \$$amazonvpc_tally");
-	printf MAIL ("%-42s", "Amazon Secrets Manager Service Total");
-	printf MAIL ("%-13s\n", "\= \$$awssecretsmanager_tally");
-	printf MAIL ("%-42s", "Amazon Cloud Front Total");
-	printf MAIL ("%-13s\n", "\= \$$cloudfront_tally");
-	printf MAIL ("%-42s", "Amazon Guard Duty Total");
-	printf MAIL ("%-13s\n", "\= \$$guardduty_tally");
-	printf MAIL ("%-42s", "Amazon Config Service Total");
-	printf MAIL ("%-13s\n", "\= \$$awsconfig_tally");
-	printf MAIL ("%-42s", "Amazon Cost Explorer Service Total");
-	printf MAIL ("%-13s\n", "\= \$$costexplorer_tally");
-	printf MAIL ("%-42s", "Amazon Business Support Total");
-	printf MAIL ("%-13s\n", "\= \$$support_bus_tally");
-	printf MAIL ("%-42s", "Amazon X-Ray Service Total");
-	printf MAIL ("%-13s\n", "\= \$$xray_tally");
-	printf MAIL ("%-42s", "Amazon Glue Service Total");
-	printf MAIL ("%-13s\n", "\= \$$awsglue_tally");
-	printf MAIL ("%-42s", "Unknown Services Total");
-	printf MAIL ("%-13s\n", "\= \$$unknown_tally");
-
-	print MAIL "\n";
-
-	printf MAIL ("%-35s", "GRAND TOTAL");
-	printf MAIL ("%-13s\n", "\= \$$sum");
-
+if ($is_first_day) {
+	print MAIL "Amazon Web Services Report for $first_day";
+	print MAIL "Being the first of the month, all tallies are reset\!<br>";
 } else {
-
-	print MAIL "Amazon Web Services Report from $first_day - $current_day\n";
-
-	print MAIL "\nEC2 Breakdown by Owner:\n";
-
-	for (keys %ec2_tally) {
-		printf MAIL ("\t%-35s", "\* $_");
-		printf MAIL ("%-13s\n", "\= \$$ec2_tally{$_}");
-	}
-
-	printf MAIL ("\n%-35s", "TOTAL FOR EC2");
-	$ec2_total = sprintf("%.2f", $ec2_total);
-	printf MAIL ("%-13s", "\= \$$ec2_total");
-	print_diff($ec2_diff);
-	print MAIL "\n";
-
-	printf MAIL ("%-35s", "Data Transfer Total");
-	printf MAIL ("%-13s", "\= \$$data_tally");
-	print_diff($data_diff);
-
-	printf MAIL ("%-35s", "S3 Storage Total");
-	printf MAIL ("%-13s", "\= \$$s3_tally");
-	print_diff($s3_diff);
-
-	printf MAIL ("%-35s", "AWS Developer Support Total");
-	printf MAIL ("%-13s", "\= \$$support_dev_tally");
-	print_diff($support_diff);
-
-	printf MAIL ("%-35s", "Amazon Route 53 Total");
-	printf MAIL ("%-13s", "\= \$$route53_tally");
-	print_diff($route53_diff);
-
-	printf MAIL ("%-35s", "Amazon Registrar Total");
-	printf MAIL ("%-13s", "\= \$$registrar_tally");
-	print_diff($registrar_diff);
-
-	printf MAIL ("%-35s", "Amazon Data Pipeline Total");
-	printf MAIL ("%-13s", "\= \$$datapipeline_tally");
-	print_diff($datapipeline_diff);
-
-	printf MAIL ("%-35s", "AWS Key Management Services Total");
-	printf MAIL ("%-13s", "\= \$$awskms_tally");
-	print_diff($awskms_diff);
-
-	printf MAIL ("%-35s", "Amazon SimpleDB Total");
-	printf MAIL ("%-13s", "\= \$$simpledb_tally");
-	print_diff($simpledb_diff);
-
-	printf MAIL ("%-35s", "Amazon Lambda Service Total");
-	printf MAIL ("%-13s", "\= \$$lambda_tally");
-	print_diff($lambda_diff);
-
-	printf MAIL ("%-35s", "Amazon CloudTrail Service Total");
-	printf MAIL ("%-13s", "\= \$$cloudtrail_tally");
-	print_diff($cloudtrail_diff);
-
-	printf MAIL ("%-35s", "Amazon CloudWatch Service Total");
-	printf MAIL ("%-13s", "\= \$$cloudwatch_tally");
-	print_diff($cloudwatch_diff);
-
-	printf MAIL ("%-35s", "Amazon Simple Queue Service Total");
-	printf MAIL ("%-13s", "\= \$$queueservice_tally");
-	print_diff($queueservice_diff);
-
-	printf MAIL ("%-35s", "Amazon Notification Service Total");
-	printf MAIL ("%-13s", "\= \$$notification_tally");
-	print_diff($notification_diff);
-
-	printf MAIL ("%-35s", "Amazon API Gateway Service Total");
-	printf MAIL ("%-13s", "\= \$$amazonapigateway_tally");
-	print_diff($amazonapigateway_diff);
-
-	printf MAIL ("%-35s", "Amazon DynamoDB Service Total");
-	printf MAIL ("%-13s", "\= \$$amazondynamodb_tally");
-	print_diff($amazondynamodb_diff);
-
-	printf MAIL ("%-35s", "Amazon Elastic Container Service for Kubernetes Total");
-	printf MAIL ("%-13s", "\= \$$amazoneks_tally");
-	print_diff($amazoneks_diff);
-
-	printf MAIL ("%-35s", "Amazon Elasticsearch Service Total");
-	printf MAIL ("%-13s", "\= \$$amazones_tally");
-	print_diff($amazones_diff);
-
-	printf MAIL ("%-35s", "Amazon Relational Database Service Total");
-	printf MAIL ("%-13s", "\= \$$amazonrds_tally");
-	print_diff($amazonrds_diff);
-
-	printf MAIL ("%-35s", "Amazon Step Functions Service Total");
-	printf MAIL ("%-13s", "\= \$$amazonstates_tally");
-	print_diff($amazonstates_diff);
-
-	printf MAIL ("%-35s", "Amazon Virtual Private Cloud Service Total");
-	printf MAIL ("%-13s", "\= \$$amazonvpc_tally");
-	print_diff($amazonvpc_diff);
-
-	printf MAIL ("%-35s", "Amazon Secrets Manager Service Total");
-	printf MAIL ("%-13s", "\= \$$awssecretsmanager_tally");
-	print_diff($awssecretsmanager_diff);
-
-	printf MAIL ("%-35s", "Amazon Cloud Front Total");
-	printf MAIL ("%-13s", "\= \$$cloudfront_tally");
-	print_diff($cloudfront_diff);
-
-	printf MAIL ("%-35s", "Amazon Guard Duty Total");
-	printf MAIL ("%-13s", "\= \$$guardduty_tally");
-	print_diff($guardduty_diff);
-
-	printf MAIL ("%-35s", "Amazon Config Service Total");
-	printf MAIL ("%-13s", "\= \$$awsconfig_tally");
-	print_diff($awsconfig_diff);
-
-	printf MAIL ("%-35s", "Amazon Cost Explorer Total");
-	printf MAIL ("%-13s", "\= \$$costexplorer_tally");
-	print_diff($costexplorer_diff);
-
-	printf MAIL ("%-35s", "Amazon Business Support Total");
-	printf MAIL ("%-13s", "\= \$$support_bus_tally");
-	print_diff($support_bus_diff);
-
-	printf MAIL ("%-35s", "Amazon X-Ray Service Total");
-	printf MAIL ("%-13s", "\= \$$xray_tally");
-	print_diff($xray_diff);
-
-	printf MAIL ("%-35s", "Amazon Glue Service Total");
-	printf MAIL ("%-13s", "\= \$$awsglue_tally");
-	print_diff($awsglue_diff);
-
-	printf MAIL ("%-35s", "Unknown Services Total");
-	printf MAIL ("%-13s", "\= \$$unknown_tally");
-	print_diff($unknown_diff);
-
-
-	print MAIL "\n";
-
-	printf MAIL ("%-35s", "GRAND TOTAL");
-	printf MAIL ("%-13s", "\= \$$sum");
-	print_diff($grand_diff);
+	print MAIL "Amazon Web Services Report from $first_day - $current_day<br>";
 }
+if ($no_results) {
+	print MAIL "<p style=\"color: red;\">NOTICE: Unable to grab yesterday\'s";
+	print MAIL " tallies for comparison from the database, only today\'s";
+	print MAIL " tallies are shown below.</p>";
+}
+print MAIL "\
+<table>
+	<caption>EC2 Breakdown by Owner</caption>
+	<thead>
+		<tr>
+			<th>Owner</th>
+			<th>Total</th>
+		</tr>
+	</thead>
+	<tbody>";
+for (keys %ec2_tally) {
+	print MAIL "
+		<tr>
+			<td>$_</td>
+			<td>\$$ec2_tally{$_}</td>
+		</tr>";
+}
+printf MAIL ("\
+	</tbody>
+	<tfoot>
+		<tr>
+			<td>Grand total</td>
+			<td>\$%s", sprintf("%.2f", $ec2_total));
+print MAIL ($show_diff ? "<br>(" . print_diff($ec2_diff) . ")" : "") . "</td>
+		</tr>
+	</tfoot>
+</table>
+<br>
+<table>
+	<thead>
+		<tr>
+			<th>Service</th>
+			<th>Amount</th>
+			" . ($show_diff ? "<th>Diff</th>" : "") . "
+		</tr>
+	</thead>
+	<tbody>";
+
+my $amt = 0.00;
+my $diff = 0.00;
+foreach my $service (@SERVICES) {
+	$amt = sprintf("%.2f", $tally{$service});
+	$diff = sprintf("%.2f", $diff{$service});
+	if ($amt eq "0.00" and $diff eq "0.00") {
+		next;
+	}
+	print MAIL "
+		<tr>
+			<td>$service</td>
+			<td>\$$amt</td>
+			" . ($show_diff ? "<td>" . print_diff($diff) . "</td>" : "") . "
+		</tr>";
+}
+printf MAIL ("
+	</tbody>
+	<tfoot>
+		<tr>
+			<td>Grand total</td>
+			<td>\$%s</td>", sprintf("%.2f", $sum));
+print MAIL ($show_diff ? "<td>" . print_diff($grand_diff) . "</td>" : "") . "
+		</tr>
+	</tfoot>
+</table>";
 
 # Populate the aws_reporting database with today's dollar amounts
 
@@ -745,7 +502,6 @@ $grab->execute() or print "\nCouldn't execute statement: " . $grab->errstr . "\n
 
 if ($grab->rows == 0) {
 	# Data is not there yet for today, let's put it in there!
-
 	$connect->do("INSERT INTO \`$k\`
 	(report_date, data_tally, s3_tally, support_dev_tally, route53_tally, datapipeline_tally,
 	awskms_tally, simpledb_tally, cloudwatch_tally, cloudtrail_tally,
@@ -755,20 +511,26 @@ if ($grab->rows == 0) {
 	awssecretsmanager_tally, cloudfront_tally, guardduty_tally,
 	awsconfig_tally, costexplorer_tally, support_bus_tally, xray_tally,
 	awsglue_tally, unknown_tally, grand_total) VALUES
-	(\"$today_mysqlformat\", \"$data_tally\", \"$s3_tally\", \"$support_dev_tally\", \"$route53_tally\",
-	\"$datapipeline_tally\", \"$awskms_tally\", \"$simpledb_tally\", \"$cloudwatch_tally\",
-	\"$cloudtrail_tally\", \"$queueservice_tally\", \"$notification_tally\",
-	\"$lambda_tally\", \"$registrar_tally\", \"$ec2_total\",
-	\"$amazonapigateway_tally\", \"$amazondynamodb_tally\", \"$amazoneks_tally\",
-	\"$amazones_tally\", \"$amazonrds_tally\", \"$amazonstates_tally\",
-	\"$amazonvpc_tally\", \"$awssecretsmanager_tally\", \"$cloudfront_tally\",
-	\"$guardduty_tally\", \"$awsconfig_tally\", \"$costexplorer_tally\", \"$support_bus_tally\",
-	\"$xray_tally\", \"$awsglue_tally\", \"$unknown_tally\", \"$sum\")");
-
+	(\"$today_mysqlformat\", \"$tally{'Data Transfer'}\", \"$tally{'S3 Storage'}\",
+	\"$tally{'AWS Developer Support'}\", \"$tally{'Amazon Route 53'}\",
+	\"$tally{'Amazon Data Pipeline'} \", \"$tally{'AWS Key Management Services'}\",
+	\"$tally{'Amazon SimpleDB'}\", \"$tally{'Amazon CloudWatch Service'}\",
+	\"$tally{'Amazon CloudTrail Service'}\", \"$tally{'Amazon Simple Queue Service'}\",
+	\"$tally{'Amazon Notification Service'}\", \"$tally{'Amazon Lambda Service'}\",
+	\"$tally{'Amazon Registrar'}\", \"$ec2_total\",
+	\"$tally{'Amazon API Gateway Service'}\", \"$tally{'Amazon DynamoDB Service'}\",
+	\"$tally{'Amazon Containers for Kubernetes'}\", \"$tally{'Amazon Elasticsearch Service'}\",
+	\"$tally{'Amazon Relational Database Service'}\", \"$tally{'Amazon Step Functions Service'}\",
+	\"$tally{'Amazon Virtual Private Cloud Service'}\", \"$tally{'Amazon Secrets Manager Service'}\",
+	\"$tally{'Amazon CloudFront'}\", \"$tally{'Amazon Guard Duty'}\",
+	\"$tally{'Amazon Config Service'}\", \"$tally{'Amazon Cost Explorer Service'}\",
+	\"$tally{'Amazon Business Support'}\", \"$tally{'Amazon X-Ray Service'}\",
+	\"$tally{'Amazon Glue Service'}\", \"$tally{'Unknown Services'}\", \"$sum\")");
 
 } else {
-	print MAIL "\nEither an entry for today already exists in the database,\n";
-	print MAIL "or there was a problem checking for data for today in the DB\!\n";
+	print MAIL '<p style="color:red;">Either an entry for today already ';
+	print MAIL "exists in the database, or there was a problem checking for ";
+	print MAIL "data for today in the DB\!</p>";
 }
 
 $totals{$k} = $sum;
@@ -796,9 +558,61 @@ my $subject = "AWS Report for $current_day";
 open(MAIL, '<', "/tmp/mailtemp.txt");
 open(MAILSEND, "|/usr/sbin/sendmail -t");
 
-print MAILSEND "To: $to\n";
-print MAILSEND "From: $from\n";
-print MAILSEND "Subject: $subject\n\n";
+# Styles are custom and cherry-picked from pure-css 1.0.1
+# For styles to show in gmail, they must be in <head> and not <body>
+print MAILSEND "Mime-Version: 1.0
+Content-Type: text/html; charset='UTF-8'
+To: $to
+From: $from
+Subject: $subject
+
+<!doctype html>
+<html lang='en'>
+<head>
+	<meta charset='utf-8'>
+	<title>$subject</title>
+	<style type='text/css'>
+		td + td { text-align: right; }	/* All columns except first align right */
+		table {
+			border-collapse: collapse;
+			border-spacing: 0;
+			empty-cells: show;
+			border: 1px solid #cbcbcb;
+		}
+		thead {
+			background-color: #e0e0e0;
+			color: #000;
+			text-align: left;
+			vertical-align: bottom;
+		}
+		th, td {
+			border-width: 0 0 1px 0;
+			border-bottom: 1px solid #cbcbcb;
+			font-size: inherit;
+			margin: 0;
+			overflow: visible;
+			padding: .5em 1em;
+		}
+		td { background-color: transparent; }
+		caption {
+			color: #000;
+			padding: 1em 0;
+			text-align: center;
+			font: italic 85%/1 arial,sans-serif;
+		}
+		body {
+			margin: 1em;
+			font-family: sans-serif;
+			-webkit-text-size-adjust: 100%;
+			ms-text-size-adjust: 100%;
+		}
+		a { background-color: transparent }
+		h1 { font-size:2em; margin:.67em 0; }
+		tbody > tr:hover, tfoot > tr:hover { background-color: #f2f2f2; }
+		tfoot { font-weight: 700; }
+	</style>
+</head>
+<body>";
 
 if ($day eq "01") {
 	print MAILSEND "Amazon Web Services Report for $first_day\n";
@@ -807,15 +621,32 @@ if ($day eq "01") {
 	print MAILSEND "Amazon Web Services Report from $first_day - $current_day\n\n";
 }
 
-print MAILSEND "TOTALS BY ACCOUNT:\n\n";
-
+print MAILSEND "<h2>Totals by account</h2>
+<table>
+	<thead>
+		<tr>
+			<th>Account</th>
+			<th>Spend</th>
+		</tr>
+	</thead>
+	<tbody>";
 foreach my $account (sort keys %totals) {
-	printf MAILSEND ("%-28s", $account . " ");
-	printf MAILSEND ("%-15s\n", ": " . $totals{$account});
+	printf MAILSEND ("\
+		<tr>
+			<td><a href=\"#$account\">$account</a></td>
+			<td>\$%s</td>
+		</tr>", sprintf("%.2f", $totals{$account}));
 }
-
-printf MAILSEND ("%-28s", "GRAND TOTAL ALL ACCOUNTS ");
-printf MAILSEND ("%-15s\n\n", ": $all_total");
+$all_total = sprintf("%.2f", $all_total);
+print MAILSEND "\
+	</tbody>
+	<tfoot>
+		<tr>
+			<td>Grand total</td>
+			<td>\$$all_total</td>
+		</tr>
+	</tfoot>
+</table>";
 
 while (<MAIL>) {
 	print MAILSEND "$_";
@@ -863,19 +694,32 @@ while (my $line_detailed = <$data_detailed>) {
 	}
 }
 
-print MAILSEND "\n===PROJECT BASED ACCOUNTING BASED ON THE \"Name\" TAG ===\n\n";
-
+print MAILSEND '<h2>Project-based accounting based on the "Name" tag</h2>
+<table>
+	<thead>
+		<tr>
+			<th>Tag</th>
+			<th>Amount</th>
+		</tr>
+	</thead>
+	<tbody>';
 keys %project_spending;
 foreach my $k (sort keys %project_spending) {
 	my $v = $project_spending{$k};
 	$v = sprintf("%.2f", $v);
-	printf MAILSEND ("%-28s", "$k");
-	printf MAILSEND ("%-15s\n", ": \$$v");
+	# It's important that we add a newline at the end here; Gmail (or maybe
+	# SMTP, it's unclear to me) will automatically split lines that are too
+	# long, and we have a lot of tags. This can cause some tags to be
+	# interpreted as text (i.e. content and not markup) which will bork the
+	# formatting of the table. And that's not good.
+	print MAILSEND "<tr><td>$k</td><td>\$$v</td></tr>\n";
 }
+print MAILSEND "</tbody></table>";
 
 close($data_detailed);
 
 # Close email and send
+print MAILSEND "</body></html>";
 
 close(MAIL);
 close(MAILSEND);
@@ -885,3 +729,4 @@ close(MAILSEND);
 unlink("$local_detailed_file_unzipped");
 unlink("$tmpfile");
 unlink("/tmp/mailtemp.txt");
+
