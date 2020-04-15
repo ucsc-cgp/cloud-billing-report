@@ -29,13 +29,22 @@ our ($data_diff,$s3_diff,$support_diff,$route53_diff,$datapipeline_diff,$awskms_
 our ($simpledb_diff,$cloudwatch_diff,$cloudtrail_diff,$queueservice_diff,$notification_diff);
 our (%ec2_mapping,$one_up);
 our (%aws_accounts,%project_spending,$data_detailed,$grand_diff,$lambda_diff,$ec2_diff);
-our ($all_total, $prod_total);
+our ($all_total, %totals);
 
 
 # Initialize AWS Accounts and Account Numbers
 
-# TODO: Data removed
-$aws_accounts{'prod'} = '12345';
+my $accounts_csv = Text::CSV->new({ sep_char => ',' });
+open(my $accounts, '<', 'accounts.csv') or die $!;
+while (my $line = <$accounts>) {
+	chomp $line;
+	if ($accounts_csv->parse($line)) {
+		my @fields = $accounts_csv->fields();
+		$aws_accounts{"$fields[0]"} = $fields[1];
+	} else {
+		die "could not parse \"$line\" in accounts.csv";
+	}
+}
 
 # The following account bills against an internal AWS account for the
 # Free Public Dataset promotion
@@ -762,23 +771,23 @@ if ($grab->rows == 0) {
 	print MAIL "or there was a problem checking for data for today in the DB\!\n";
 }
 
-# TODO: Data removed
-if ($k eq "prod") {
-	$prod_total = $sum;
-}
+$totals{$k} = $sum;
 
 } ########## CLOSE %aws_accounts hash loop
 
 # Add up all totals
-
-$all_total = ($prod_total);
+foreach my $account (sort keys %totals) {
+	$all_total += $totals{$account};
+}
 
 close(MAIL);
 
 # Set up email
 
-# TODO: Data removed
-my $to = 'removed@example.com';
+open(RECIPIENTS_LIST, '<', 'recipients') or die $!;
+chomp(my @recipients = <RECIPIENTS_LIST>);
+close(RECIPIENTS_LIST);
+my $to = join(',', @recipients);
 
 # TODO: Data removed
 my $from = 'root@example.com';
@@ -800,9 +809,13 @@ if ($day eq "01") {
 
 print MAILSEND "TOTALS BY ACCOUNT:\n\n";
 
-# TODO: Data removed
-printf MAILSEND ("%-28s", "prod ");
-printf MAILSEND ("%-15s\n", ": $prod_total");
+foreach my $account (sort keys %totals) {
+	printf MAILSEND ("%-28s", $account . " ");
+	printf MAILSEND ("%-15s\n", ": " . $totals{$account});
+}
+
+printf MAILSEND ("%-28s", "GRAND TOTAL ALL ACCOUNTS ");
+printf MAILSEND ("%-15s\n\n", ": $all_total");
 
 while (<MAIL>) {
 	print MAILSEND "$_";
