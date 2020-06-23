@@ -14,7 +14,7 @@ chdir('/root/aws-reporting');
 
 our (%ec2_tally, $sum, %ec2_mapping, $one_up, $ec2_total, $ec2_diff);
 our (%aws_accounts, %project_spending, $data_detailed, $grand_diff);
-our ($all_total, %totals, %tally, %diff);
+our ($all_total, %totals, %tally, %diff, %totals_prev, $yesterday_all_total);
 
 my @SERVICES = ('Data Transfer', 'S3 Storage', 'AWS Developer Support',
 				'Amazon Route 53', 'Amazon Registrar', 'Amazon Data Pipeline',
@@ -534,13 +534,20 @@ if ($grab->rows == 0) {
 }
 
 $totals{$k} = $sum;
+$all_total += $sum;
+
+# Get previous total for showing account diff
+$grab = $connect->prepare("SELECT grand_total FROM \`$k\` WHERE report_date = \"$yesterday_mysqlformat\"");
+$grab->execute() or die "\nCouldn't execute statement: " . $grab->errstr . "\n";
+if ($grab->rows == 0) {
+	$totals_prev{$k} = "N/A";
+} else {
+	my $amount = $grab->fetchrow_hashref()->{'grand_total'};
+	$totals_prev{$k} = print_diff($amount);
+	$yesterday_all_total += $amount;
+}
 
 } ########## CLOSE %aws_accounts hash loop
-
-# Add up all totals
-foreach my $account (sort keys %totals) {
-	$all_total += $totals{$account};
-}
 
 close(MAIL);
 
@@ -627,6 +634,7 @@ print MAILSEND "<h2>Totals by account</h2>
 		<tr>
 			<th>Account</th>
 			<th>Spend</th>
+			<th>Diff</th>
 		</tr>
 	</thead>
 	<tbody>";
@@ -635,6 +643,7 @@ foreach my $account (sort keys %totals) {
 		<tr>
 			<td><a href=\"#$account\">$account</a></td>
 			<td>\$%s</td>
+			<td>$totals_prev{$account}</td>
 		</tr>", sprintf("%.2f", $totals{$account}));
 }
 $all_total = sprintf("%.2f", $all_total);
@@ -644,6 +653,7 @@ print MAILSEND "\
 		<tr>
 			<td>Grand total</td>
 			<td>\$$all_total</td>
+			<td>+\$$yesterday_all_total</td>
 		</tr>
 	</tfoot>
 </table>";
