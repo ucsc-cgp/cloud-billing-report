@@ -109,3 +109,7 @@ You might encounter issues testing this script locally depending on what
 recipients are specified. (For example, Google will not accept mail from some
 hosts over IPv6 without extra configuration.) In this case, the script can be
 modified to output the email report to a file.
+
+Alternatively, you can configure `postfix` to use an external mail server.
+Here's a [guide](https://gist.github.com/kany/c44c077881047ead8faa) on how
+to set up Postfix to relay email sent from your machine to Gmail on macOS.
