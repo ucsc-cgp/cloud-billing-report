@@ -1,0 +1,3 @@
+requires 'Text::CSV';
+requires 'DBD::mysql';
+requires 'DBI';

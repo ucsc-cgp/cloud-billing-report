@@ -1,0 +1,378 @@
+#!/usr/bin/perl
+# Written by Erich Weiler
+# Get Google Cloud Platform Daily costs and report via email to users
+# This must run via cron each day at 9:00am PST or later
+
+use strict;
+use warnings;
+
+use Text::CSV;
+use DBI;
+
+chdir('/root/gcp-reporting');
+
+# Initialize Sub Account Array
+open(PROJECTS_LIST, '<', 'projects') or die $!;
+chomp(my @projects = <PROJECTS_LIST>);
+close(PROJECTS_LIST);
+#
+# Initialize database connection stuff
+my $host = "db";
+my $database = "gcp_reporting";
+my $mysqluser = "root";
+my $pw = 'hunter2';
+
+# Initialize database connection
+
+my $connect = DBI->connect("DBI:mysql:database=$database;host=$host", "$mysqluser", "$pw", {'RaiseError' => 1});
+
+my $csv = Text::CSV->new({ sep_char => ',' });
+
+# Initialize date variables
+
+chomp(my $first_day = `/usr/bin/date +\"\%B 01, \%Y\"`);
+chomp(my $current_day = `/usr/bin/date +\"\%B \%d, \%Y\"`);
+chomp(my $today = `/usr/bin/date +\"\%-d\"`);
+chomp(my $yesterday = `/usr/bin/date +\"\%-d\" --date=\"-1 day\"`);
+chomp(my $month = `/usr/bin/date +\"\%m\"`);
+chomp(my $last_month = `/usr/bin/date +\"\%m\" --date=\"-1 month\"`);
+chomp(my $year = `/usr/bin/date +\"\%Y\"`);
+chomp(my $last_year = `/usr/bin/date +\"\%Y\" --date=\"-1 year\"`);
+chomp(my $today_mysqlformat = `/usr/bin/date +\"%Y-\%m-\%d\"`);
+chomp(my $yesterday_mysqlformat = `/usr/bin/date +\"%Y-\%m-\%d\" --date=\"-1 day\"`);
+
+# Bucket name with billing data in it
+
+my $bucket = 'ucsc-billing';
+my $total_cost = 0;
+my $project;
+
+# Initialize Service Cost Hashes and Cost Differential hashes
+
+my %computeEngine;
+my %cloudStorage;
+my %logging;
+my %cloudfunctions;
+my %pubsub;
+my %total;
+
+my %computeEngine_diff;
+my %cloudStorage_diff;
+my %logging_diff;
+my %cloudfunctions_diff;
+my %pubsub_diff;
+my %total_diff;
+
+# Initialize cost differential hashes to zero
+
+foreach $project (@projects) {
+	$computeEngine_diff{$project} = 0.00;
+	$cloudStorage_diff{$project} = 0.00;
+	$logging_diff{$project} = 0.00;
+	$cloudfunctions_diff{$project} = 0.00;
+	$pubsub_diff{$project} = 0.00;
+	$total_diff{$project} = 0.00;
+}
+
+# Support Cost tally
+
+my $supportCost = 0;
+
+# Open MAIL temporary file to populate with email data
+open(MAIL, '>', "/tmp/mailtemp.txt");
+
+if ($current_day eq "01") {
+	print MAIL "Google Cloud Platform Report for $first_day\n";
+	print MAIL "Being the first of the month, all tallies are reset\!\n\n";
+} else {
+	print MAIL "Google Cloud Platform Report from $first_day - $current_day\n\n";
+}
+
+# Get all GCP billing CSV files for the month so far
+# GCP only shows charges for a single day in each CSV file,
+# so we need to get them all for this month before tallying stats
+
+if ($today == "1" && $month ne "01") {
+	foreach my $days (1..$yesterday) {
+		my $padded_day = sprintf("%02d", $days);
+		unless (-e "/root/gcp-reporting/billing-report--$year-$last_month-$padded_day.csv") {
+			print "Getting new file billing-report--$year-$last_month-$padded_day.csv\n";
+			`/root/google-cloud-sdk/bin/gsutil cp gs://$bucket/billing-report--$year-$last_month-$padded_day.csv /root/gcp-reporting/`;
+		}
+		grab_csv_data("billing-report--$year-$last_month-$padded_day.csv");
+	}
+} elsif ($today == "1" && $month == "01") {
+	foreach my $days (1..$yesterday) {
+		my $padded_day = sprintf("%02d", $days);
+		unless (-e "/root/gcp-reporting/billing-report--$last_year-$last_month-$padded_day.csv") {
+			print "Getting new file billing-report--$last_year-$last_month-$padded_day.csv\n";
+			`/root/google-cloud-sdk/bin/gsutil cp gs://$bucket/billing-report--$last_year-$last_month-$padded_day.csv /root/gcp-reporting/`;
+		}
+		grab_csv_data("billing-report--$last_year-$last_month-$padded_day.csv");
+	}
+} elsif ($today > '1') {
+	foreach my $days (1..$yesterday) {
+		my $padded_day = sprintf("%02d", $days);
+		unless (-e "/root/gcp-reporting/billing-report--$year-$month-$padded_day.csv") {
+			print "Getting new file billing-report--$year-$month-$padded_day.csv\n";
+			`/root/google-cloud-sdk/bin/gsutil cp gs://$bucket/billing-report--$year-$month-$padded_day.csv /root/gcp-reporting/`;
+		}
+		grab_csv_data("billing-report--$year-$month-$padded_day.csv");
+	}
+}
+
+
+# Open the CSV file and iterate through each line to grab all the data
+
+sub grab_csv_data {
+
+	my $workingFile = "/root/gcp-reporting/$_[0]";
+
+	open(my $data, '<', $workingFile) or die "Could not open '$workingFile' $!\n";
+
+	$csv->column_names ($csv->getline ($data));
+	while (my $href = $csv->getline_hr ($data)) {
+		my $lineitem = $href->{'Line Item'};
+		my @service = split('/', $lineitem);
+		foreach my $project (@projects) {
+			if ($href->{'Project Name'} eq "$project") {
+
+				if ($service[2] eq "compute-engine") {
+					if ($computeEngine{"$project"}) {
+						$computeEngine{"$project"} = $computeEngine{"$project"} + $href->{'Cost'};
+					} else {
+						$computeEngine{"$project"} = $href->{'Cost'};
+					}
+				}
+
+				if ($service[2] eq "cloud-storage") {
+					if ($cloudStorage{"$project"}) {
+						$cloudStorage{"$project"} = $cloudStorage{"$project"} + $href->{'Cost'};
+					} else {
+						$cloudStorage{"$project"} = $href->{'Cost'};
+					}
+				}
+
+				if ($service[2] eq "logging") {
+					if ($logging{"$project"}) {
+						$logging{"$project"} = $logging{"$project"} + $href->{'Cost'};
+					} else {
+						$logging{"$project"} = $href->{'Cost'};
+					}
+				}
+
+				if ($service[2] eq "cloudfunctions") {
+					if ($logging{"$project"}) {
+						$cloudfunctions{"$project"} = $cloudfunctions{"$project"} + $href->{'Cost'};
+					} else {
+						$cloudfunctions{"$project"} = $href->{'Cost'};
+					}
+				}
+
+				if ($service[2] eq "pubsub") {
+					if ($pubsub{"$project"}) {
+						$pubsub{"$project"} = $pubsub{"$project"} + $href->{'Cost'};
+					} else {
+						$pubsub{"$project"} = $href->{'Cost'};
+					}
+				}
+
+
+			}
+		}
+
+		if ($service[2] eq "support") {
+			$supportCost = $supportCost + $href->{'Cost'};
+		}
+
+	}
+
+	close($data);
+}
+
+# The cost differential subroutine
+
+sub print_diff {
+        if ($_[0] > 0) {
+                $_[0] = sprintf("%.2f", $_[0]);
+                print MAIL ": up \$$_[0] from yesterday\n";
+        } elsif ($_[0] < 0) {
+                my $absolute = abs($_[0]);
+                $absolute = sprintf("%.2f", $absolute);
+                print MAIL ": down \$$absolute from yesterday\n";
+        } else {
+                print MAIL ": same as yesterday\n";
+        }
+}
+
+# Set cost tallies to zero if none were incurred.
+foreach my $project (@projects) {
+	if (!($computeEngine{$project})) {
+		$computeEngine{$project} = "0.00";
+	}
+
+	if (!($cloudStorage{$project})) {
+		$cloudStorage{$project} = "0.00";
+	}
+
+	if (!($logging{$project})) {
+		$logging{$project} = "0.00";
+	}
+
+	if (!($cloudfunctions{$project})) {
+		$cloudfunctions{$project} = "0.00";
+	}
+
+	if (!($pubsub{$project})) {
+		$pubsub{$project} = "0.00";
+	}
+}
+
+# Normalize numbers to two decimal places
+
+foreach my $project (@projects) {
+	$computeEngine{$project} = sprintf("%.2f", $computeEngine{$project});
+	$cloudStorage{$project} = sprintf("%.2f", $cloudStorage{$project});
+	$logging{$project} = sprintf("%.2f", $logging{$project});
+	$cloudfunctions{$project} = sprintf("%.2f", $cloudfunctions{$project});
+	$pubsub{$project} = sprintf("%.2f", $pubsub{$project});
+}
+$supportCost = sprintf("%.2f", $supportCost);
+
+# Compute total costs per project
+
+foreach $project (@projects) {
+	$total{$project} = $computeEngine{$project} + $cloudStorage{$project} + $logging{$project} + $cloudfunctions{$project} + $pubsub{$project};
+}
+
+# Compute grand total
+
+my $grand_total = 0.00;
+foreach $project (@projects) {
+	$grand_total = $grand_total + $total{$project};
+}
+
+# Get cost differentials from yesterday until today
+
+foreach $project (@projects) {
+	my $grab = $connect->prepare("SELECT * FROM \`$project\` WHERE report_date = \"$yesterday_mysqlformat\"");
+	$grab->execute() or print "\nCouldn't execute statement: " . $grab->errstr . "\n";
+
+	if ($grab->rows > 0) {
+		while (my @data = $grab->fetchrow_array()) {
+			$computeEngine_diff{$project} = ($computeEngine{$project} - $data[1]);
+			$pubsub_diff{$project} = ($pubsub{"$project"} - $data[2]);
+			$cloudfunctions_diff{$project} = ($cloudfunctions{$project} - $data[3]);
+			$logging_diff{$project} = ($logging{$project} - $data[4]);
+			$cloudStorage_diff{$project} = ($cloudStorage{$project} - $data[5]);
+			$total_diff{$project} = ($total{$project} - $data[6]);
+        	}
+	}
+}
+
+print MAIL "TOTALS BY PROJECT:\n\n";
+
+foreach $project (@projects) {
+	printf MAIL ("%-28s", "$project ");
+	printf MAIL ("%-15s\n", ": \$$total{$project}");
+}
+
+printf MAIL ("%-28s", '[support contract] ');
+printf MAIL ("%-15s\n", ": \$$supportCost");
+print MAIL "\n\n";
+
+printf MAIL ("%-28s", "GRAND TOTAL ALL PROJECTS ");
+printf MAIL ("%-15s\n", ": \$$grand_total");
+print MAIL "\n\n";
+
+foreach my $project (@projects) {
+	print MAIL "-----------------------------------------------------------------------\n";
+	printf MAIL ("%-34s", "PROJECT ");
+	printf MAIL ("%-15s\n", ": $project\n");
+
+	printf MAIL ("%-34s", "compute-engine ");
+	printf MAIL ("%-15s", ": \$$computeEngine{$project}");
+	print_diff($computeEngine_diff{$project});
+
+	printf MAIL ("%-34s", "cloud-storage ");
+	printf MAIL ("%-15s", ": \$$cloudStorage{$project}");
+	print_diff($cloudStorage_diff{$project});
+
+	printf MAIL ("%-34s", "logging ");
+	printf MAIL ("%-15s", ": \$$logging{$project}");
+	print_diff($logging_diff{$project});
+
+	printf MAIL ("%-34s", "cloudfunctions ");
+	printf MAIL ("%-15s", ": \$$cloudfunctions{$project}");
+	print_diff($cloudfunctions_diff{$project});
+
+	printf MAIL ("%-34s", "pubsub ");
+	printf MAIL ("%-15s", ": \$$pubsub{$project}");
+	print_diff($pubsub_diff{$project});
+
+	my $proj_total = $computeEngine{"$project"} + $cloudStorage{"$project"} + $logging{"$project"} + $cloudfunctions{"$project"} + $pubsub{"$project"};
+	print MAIL "\n";
+
+	printf MAIL ("%-34s", "Total for $project ");
+	printf MAIL ("%-15s", ": \$$proj_total");
+	print_diff($total_diff{$project});
+}
+
+print MAIL "----------------------------------------------------------------------\n";
+
+close(MAIL);
+
+# Build recipients list
+open(RECIPIENTS_LIST, '<', 'recipients') or die $!;
+chomp(my @recipients = <RECIPIENTS_LIST>);
+close(RECIPIENTS_LIST);
+my $to = join(',', @recipients);
+
+my $from = 'root@fire-01.gi.ucsc.edu';
+my $subject = "GCP Report for $current_day";
+
+open(MAIL, '<', "/tmp/mailtemp.txt");
+open(MAILSEND, "|/usr/sbin/sendmail -t");
+
+print MAILSEND "To: $to\n";
+print MAILSEND "From: $from\n";
+print MAILSEND "Subject: $subject\n\n";
+
+# Populate the gcp_reporting database with today's dollar amounts
+
+foreach my $project (@projects) {
+
+	my $sum;
+
+	my $compute = $computeEngine{$project};
+	my $storage = $cloudStorage{$project};
+	my $logs = $logging{$project};
+	my $functions = $cloudfunctions{$project};
+	my $pubs = $pubsub{$project};
+
+	$sum = $total{$project};
+
+	my $grab = $connect->prepare("SELECT * FROM \`$project\` WHERE report_date = \"$today_mysqlformat\"");
+	$grab->execute() or print "\nCouldn't execute statement: " . $grab->errstr . "\n";
+
+	if ($grab->rows == 0) {
+		# Data is not there yet for today, let's put it in there!
+
+		$connect->do("INSERT INTO \`$project\`
+		(report_date, compute_engine_tally, pubsub_tally, cloudfunctions_tally,
+		logging_tally, cloud_storage_tally, grand_total) VALUES
+		(\"$today_mysqlformat\", \"$compute\", \"$pubs\", \"$functions\",
+		\"$logs\", \"$storage\", \"$sum\")");
+	} else {
+#		print MAILSEND "\nSkipping DB entry for $project - today's data already exists.\n";
+	}
+}
+
+while (<MAIL>) {
+        print MAILSEND "$_";
+}
+
+close(MAIL);
+close(MAILSEND);
+
+unlink("/tmp/mailtemp.txt");
