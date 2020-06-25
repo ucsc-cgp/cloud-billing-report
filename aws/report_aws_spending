@@ -543,7 +543,7 @@ if ($grab->rows == 0) {
 	$totals_prev{$k} = "N/A";
 } else {
 	my $amount = $grab->fetchrow_hashref()->{'grand_total'};
-	$totals_prev{$k} = print_diff($amount);
+	$totals_prev{$k} = print_diff($sum - $amount);
 	$yesterday_all_total += $amount;
 }
 
@@ -653,7 +653,7 @@ print MAILSEND "\
 		<tr>
 			<td>Grand total</td>
 			<td>\$$all_total</td>
-			<td>+\$$yesterday_all_total</td>
+			<td>" . print_diff($all_total - $yesterday_all_total) . "</td>
 		</tr>
 	</tfoot>
 </table>";
