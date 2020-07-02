@@ -129,14 +129,15 @@ sub owner_search {
 }
 
 sub print_diff {
-	$_[0] = sprintf("%.2f", $_[0]);
-	if ($_[0] > 0) {
-		return("+\$$_[0]");
+	if ($_[0] eq '') {
+		return("N/A");
+	} elsif ($_[0] > 0) {
+		return("\$" . sprintf("%.2f", $_[0]));
 	} elsif ($_[0] < 0) {
-		my $absolute = abs($_[0]);
-		return("-\$$absolute");
+		my $absolute = sprintf("%.2f", abs($_[0]));
+		return("<span class='neg'>-\$$absolute</span>");
 	} else {
-		return("&plusmn;\$0.00");
+		return("");
 	}
 }
 
@@ -437,7 +438,7 @@ print MAIL "\
 	<thead>
 		<tr>
 			<th>Owner</th>
-			<th>Total</th>
+			<th>This month</th>
 		</tr>
 	</thead>
 	<tbody>";
@@ -463,8 +464,8 @@ print MAIL ($show_diff ? "<br>(" . print_diff($ec2_diff) . ")" : "") . "</td>
 	<thead>
 		<tr>
 			<th>Service</th>
-			<th>Amount</th>
-			" . ($show_diff ? "<th>Diff</th>" : "") . "
+			<th>This month</th>
+			" . ($show_diff ? "<th>Yesterday</th>" : "") . "
 		</tr>
 	</thead>
 	<tbody>";
@@ -579,7 +580,7 @@ Subject: $subject
 	<meta charset='utf-8'>
 	<title>$subject</title>
 	<style type='text/css'>
-		td + td { text-align: right; }	/* All columns except first align right */
+		td + td, th + th { text-align: right; }	/* All columns except first align right */
 		table {
 			border-collapse: collapse;
 			border-spacing: 0;
@@ -617,6 +618,7 @@ Subject: $subject
 		h1 { font-size:2em; margin:.67em 0; }
 		tbody > tr:hover, tfoot > tr:hover { background-color: #f2f2f2; }
 		tfoot { font-weight: 700; }
+		.neg { font-weight: 700; color: red; }
 	</style>
 </head>
 <body>";
@@ -633,8 +635,8 @@ print MAILSEND "<h2>Totals by account</h2>
 	<thead>
 		<tr>
 			<th>Account</th>
-			<th>Spend</th>
-			<th>Diff</th>
+			<th>This month</th>
+			<th>Yesterday</th>
 		</tr>
 	</thead>
 	<tbody>";
