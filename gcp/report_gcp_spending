@@ -55,6 +55,7 @@ my %logging;
 my %cloudfunctions;
 my %pubsub;
 my %total;
+my $yesterday_total = 0.00;
 
 my %computeEngine_diff;
 my %cloudStorage_diff;
@@ -193,16 +194,16 @@ sub grab_csv_data {
 # The cost differential subroutine
 
 sub print_diff {
-        if ($_[0] > 0) {
-                $_[0] = sprintf("%.2f", $_[0]);
-                print MAIL ": up \$$_[0] from yesterday\n";
-        } elsif ($_[0] < 0) {
-                my $absolute = abs($_[0]);
-                $absolute = sprintf("%.2f", $absolute);
-                print MAIL ": down \$$absolute from yesterday\n";
-        } else {
-                print MAIL ": same as yesterday\n";
-        }
+	if ($_[0] eq '') {
+		return("N/A");
+	} elsif ($_[0] > 0) {
+		return("\$" . sprintf("%.2f", $_[0]));
+	} elsif ($_[0] < 0) {
+		my $absolute = sprintf("%.2f", abs($_[0]));
+		return("<span class='neg'>-\$$absolute</span>");
+	} else {
+		return("");
+	}
 }
 
 # Set cost tallies to zero if none were incurred.
@@ -266,59 +267,144 @@ foreach $project (@projects) {
 			$logging_diff{$project} = ($logging{$project} - $data[4]);
 			$cloudStorage_diff{$project} = ($cloudStorage{$project} - $data[5]);
 			$total_diff{$project} = ($total{$project} - $data[6]);
+			$yesterday_total += $total_diff{$project};
         	}
+	} else {
+		$total_diff{$project} = "";  # N/A
 	}
 }
 
-print MAIL "TOTALS BY PROJECT:\n\n";
+print MAIL "<!doctype html>
+<html lang='en'>
+<head>
+	<meta charset='utf-8'>
+	<style type='text/css'>
+		/* All columns except first align right */
+		td + td, th + th { text-align: right; }
+		table {
+			border-collapse: collapse;
+			border-spacing: 0;
+			empty-cells: show;
+			border: 1px solid #cbcbcb;
+		}
+		thead {
+			background-color: #e0e0e0;
+			color: #000;
+			text-align: left;
+			vertical-align: bottom;
+		}
+		th, td {
+			border-width: 0 0 1px 0;
+			border-bottom: 1px solid #cbcbcb;
+			font-size: inherit;
+			margin: 0;
+			overflow: visible;
+			padding: .5em 1em;
+		}
+		td { background-color: transparent; }
+		caption {
+			color: #000;
+			padding: 1em 0;
+			text-align: center;
+			font: italic 85%/1 arial,sans-serif;
+		}
+		body {
+			margin: 1em;
+			font-family: sans-serif;
+			-webkit-text-size-adjust: 100%;
+			ms-text-size-adjust: 100%;
+		}
+		a { background-color: transparent }
+		h1 { font-size:2em; margin:.67em 0; }
+		tbody > tr:hover, tfoot > tr:hover { background-color: #f2f2f2; }
+		tfoot { font-weight: 700; }
+		.neg { font-weight: 700; color: red; }
+	</style>
+</head>
+<body>
+<h2>Totals by project</h2>
+<table>
+	<thead>
+		<tr>
+			<th>Project name</th>
+			<th>This month</th>
+			<th>Yesterday</th>
+		</tr>
+	</thead>
+	<tbody>";
 
 foreach $project (@projects) {
-	printf MAIL ("%-28s", "$project ");
-	printf MAIL ("%-15s\n", ": \$$total{$project}");
+	print MAIL "
+		<tr>
+			<td><a href=\"#$project\">$project</a></td>
+			<td>\$" . sprintf("%.2f", $total{$project}) . "</td>
+			<td>". print_diff($total_diff{$project}) . "</td>
+		</tr>";
 }
-
-printf MAIL ("%-28s", '[support contract] ');
-printf MAIL ("%-15s\n", ": \$$supportCost");
-print MAIL "\n\n";
-
-printf MAIL ("%-28s", "GRAND TOTAL ALL PROJECTS ");
-printf MAIL ("%-15s\n", ": \$$grand_total");
-print MAIL "\n\n";
+print MAIL "
+		<tr>
+			<td>(support contract)</td>
+			<td>\$" . sprintf("%.2f", $supportCost) . "</td>
+			<td>--</td>
+		</tr>
+	</tbody>
+	<tfoot>
+		<tr>
+			<td>Grand Total</td>
+			<td>\$" . sprintf($grand_total) . "</td>
+			<td>" . print_diff($yesterday_total) . "</td>
+		</tr>
+	</tfoot>
+</table>";
 
 foreach my $project (@projects) {
-	print MAIL "-----------------------------------------------------------------------\n";
-	printf MAIL ("%-34s", "PROJECT ");
-	printf MAIL ("%-15s\n", ": $project\n");
-
-	printf MAIL ("%-34s", "compute-engine ");
-	printf MAIL ("%-15s", ": \$$computeEngine{$project}");
-	print_diff($computeEngine_diff{$project});
-
-	printf MAIL ("%-34s", "cloud-storage ");
-	printf MAIL ("%-15s", ": \$$cloudStorage{$project}");
-	print_diff($cloudStorage_diff{$project});
-
-	printf MAIL ("%-34s", "logging ");
-	printf MAIL ("%-15s", ": \$$logging{$project}");
-	print_diff($logging_diff{$project});
-
-	printf MAIL ("%-34s", "cloudfunctions ");
-	printf MAIL ("%-15s", ": \$$cloudfunctions{$project}");
-	print_diff($cloudfunctions_diff{$project});
-
-	printf MAIL ("%-34s", "pubsub ");
-	printf MAIL ("%-15s", ": \$$pubsub{$project}");
-	print_diff($pubsub_diff{$project});
-
 	my $proj_total = $computeEngine{"$project"} + $cloudStorage{"$project"} + $logging{"$project"} + $cloudfunctions{"$project"} + $pubsub{"$project"};
-	print MAIL "\n";
-
-	printf MAIL ("%-34s", "Total for $project ");
-	printf MAIL ("%-15s", ": \$$proj_total");
-	print_diff($total_diff{$project});
+	print MAIL "<a name=\"$project\" id=\"$project\"></a><h2>Report for account $project</h2>";
+	print MAIL "<table>
+	<thead>
+		<tr>
+			<th>Service</th>
+			<th>This month</th>
+			<th>Yesterday</th>
+		</tr>
+	</thead>
+	<tbody>
+		<tr>
+			<td>compute-engine</td>
+			<td>\$$computeEngine{$project}</td>
+			<td>" . print_diff($computeEngine_diff{$project}) . "</td>
+		</tr>
+		<tr>
+			<td>cloud-storage</td>
+			<td>\$$cloudStorage{$project}</td>
+			<td>" . print_diff($cloudStorage_diff{$project}) . "</td>
+		</tr>
+		<tr>
+			<td>logging</td>
+			<td>\$$logging{$project}</td>
+			<td>" . print_diff($logging_diff{$project}) . "</td>
+		</tr>
+		<tr>
+			<td>cloudfunctions</td>
+			<td>\$$cloudfunctions{$project}</td>
+			<td>" . print_diff($cloudfunctions_diff{$project}) . "</td>
+		</tr>
+		<tr>
+			<td>pubsub</td>
+			<td>\$$pubsub{$project}</td>
+			<td>" . print_diff($pubsub_diff{$project}) . "</td>
+		</tr>
+	</tbody>
+	<tfoot>
+		<tr>
+			<td>Total for $project</td>
+			<td>\$" . sprintf("%.2f", $proj_total) . "</td>
+			<td>" . print_diff($total_diff{$project}) . "</td>
+		</tr>
+	</tfoot>
+	</table>";
 }
-
-print MAIL "----------------------------------------------------------------------\n";
+print MAIL "</body></html>";
 
 close(MAIL);
 
@@ -334,6 +420,8 @@ my $subject = "GCP Report for $current_day";
 open(MAIL, '<', "/tmp/mailtemp.txt");
 open(MAILSEND, "|/usr/sbin/sendmail -t");
 
+print MAILSEND "Mime-Version: 1.0\n";
+print MAILSEND "Content-Type: text/html; charset='UTF-8'\n";
 print MAILSEND "To: $to\n";
 print MAILSEND "From: $from\n";
 print MAILSEND "Subject: $subject\n\n";
