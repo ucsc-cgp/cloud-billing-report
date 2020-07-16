@@ -1,0 +1,24 @@
+{
+    aws => {
+        access_key => 'AWS_ACCESS_KEY_HERE',
+        secret_key => 'AWS_SECRET_ACCESS_KEY_HERE',
+        bucket => 'S3_BUCKET_NAME_HERE',
+        accounts => {
+            'account-name-1' => '101010101010AccountId',
+            'account-name-2' => '010101010101',
+        }
+    },
+    db => {
+        host => 'db',
+        database => 'aws_reporting',
+        user => 'root',
+        pass => 'hunter2'
+    },
+    report => {
+        from => 'joe@example.com',
+        recipients => [
+            'test@example.com',
+            'recipient@example.com',
+        ]
+    }
+}

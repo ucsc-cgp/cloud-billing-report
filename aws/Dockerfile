@@ -6,6 +6,5 @@ RUN cpan cpanm
 RUN cpanm --installdeps .
 RUN ln -s /bin/date /usr/bin/date
 COPY report_aws_spending /root/aws-reporting/
-COPY accounts.csv /root/aws-reporting/
-COPY recipients /root/aws-reporting/
+COPY config.pl /root/aws-reporting/
 CMD ["perl", "report_aws_spending"]

@@ -15,25 +15,13 @@ and run the script with
 
 ## Configuration
 
-Specify the people who should receive the report in `recipients`. You can refer
-to `recipients.example` to see how the file should look like - each recipient
-should be separated in the file by a newline.
-
-Specify the accounts to check in `accounts.csv`. Similar to `recipients`, you
-can reference `accounts.csv.example` to see what the file should look like.
-Each account should be specified on its own line, starting with the account
-name then the account number, each separated by a comma.
-
-Both the `recipients` and `accounts.csv` file should be placed in
-`/root/aws-reporting/`.
-
-The following need to be configured directly in the script:
-* AWS access keys (`$access_key`, `$secret_key`)
-* Billing data S3 bucket name (`$bucket`)
-* MySQL account credentials and connection info (`$host`, `$pw`, `$mysqluser`,
-  `$database`)
-* The `from` email address (`$from`)
-
+Copy the file [config.pl.example](config.pl.example) to
+`/root/aws-reporting/config.pl` and complete it with:
+* Email addresses of report recipients
+* Account names and numbers to check
+* AWS access keys
+* Database acess credentials
+* S3 bucket name containing billing data
 
 ## Development
 
@@ -43,15 +31,10 @@ To run this script locally, you'll need a few things:
   a table for each account in `accounts.csv`. Store this file in a subdirectory
   named `db/`; `docker-compose` will automatically populate the database with
   this data.
-* AWS keys with access to billing data in S3
 * `docker-compose`
 
-MySQL connection details need to be configured in `report_aws_spending`
-manually:
-* Change the hostname to `db`
-* Change the username to `root`
-* Change the password to `hunter2`, or whatever is specified in
-  `docker-compose.yml`
+`config.pl.example` is pre-configured with credentials that can access the
+development MySQL instance.
 
 Then:
 

@@ -12,6 +12,10 @@ use Hash::Util ('lock_keys');
 
 chdir('/root/aws-reporting');
 
+my $config = do("/root/aws-reporting/config.pl");
+die "Error parsing config file: $@" if $@;
+die "Error reading config file: $!" unless defined $config;
+
 our (%ec2_tally, $sum, %ec2_mapping, $one_up, $ec2_total, $ec2_diff);
 our (%aws_accounts, %project_spending, $data_detailed, $grand_diff);
 our ($all_total, %totals, %tally, %diff, %totals_prev, $yesterday_all_total);
@@ -31,26 +35,6 @@ my @SERVICES = ('Data Transfer', 'S3 Storage', 'AWS Developer Support',
 				'Amazon X-Ray Service', 'Amazon Glue Service',
 				'Unknown Services');
 
-# Initialize AWS Accounts and Account Numbers
-
-my $accounts_csv = Text::CSV->new({ sep_char => ',' });
-open(my $accounts, '<', 'accounts.csv') or die $!;
-while (my $line = <$accounts>) {
-	chomp $line;
-	if ($accounts_csv->parse($line)) {
-		my @fields = $accounts_csv->fields();
-		$aws_accounts{"$fields[0]"} = $fields[1];
-	} else {
-		die "could not parse \"$line\" in accounts.csv";
-	}
-}
-
-# The following account bills against an internal AWS account for the
-# Free Public Dataset promotion
-
-
-my $csv = Text::CSV->new({ sep_char => ',' });
-
 # Initialize date variables
 chomp(my $current_day = `/usr/bin/date +\"\%B \%d, \%Y\"`);
 chomp(my $first_day = `/usr/bin/date +\"\%B 01, \%Y\"`);
@@ -66,8 +50,8 @@ my $access_key = 'ADD_ACCESS_KEY_HERE';
 my $secret_key = 'ADD_SECRET_KEY_HERE';
 
 my $conn = Amazon::S3->new({
-	aws_access_key_id	=> $access_key,
-	aws_secret_access_key	=> $secret_key,
+	aws_access_key_id	=> $config->{aws}->{access_key},
+	aws_secret_access_key	=> $config->{aws}->{secret_key},
 	secure			=> 1,
 	retry			=> 1,
 });
@@ -78,8 +62,8 @@ my $s3_detailed_file = "862902209576-aws-billing-detailed-line-items-with-resour
 my $local_detailed_file = "/root/aws-reporting/862902209576-aws-billing-detailed-line-items-with-resources-and-tags-$local_file_date.zip";
 my $local_detailed_file_unzipped = "/root/aws-reporting/862902209576-aws-billing-detailed-line-items-with-resources-and-tags-$s3_file_date";
 my $tmpfile = "/root/aws-reporting/tmpfile";
-# TODO: Data removed
-my $bucket = $conn->bucket("BUCKET_NAME_HERE");
+
+my $bucket = $conn->bucket($config->{aws}->{bucket});
 
 # Get the latest AWS report files (summary and detailed) from our bucket
 # Also, unzip the detailed file
@@ -92,19 +76,13 @@ $bucket->get_key_filename("$s3_detailed_file", undef,
 
 system("/usr/bin/unzip -o -qq $local_detailed_file");
 
-# Initialize database connection stuff
-
-# TODO: Data removed
-my $host = "localhost";
-my $database = "Cool database name";
-my $mysqluser = "Cool Username";
-my $pw = 'Cool Password';
-
 # Open MAIL temporary file to populate with email data
 
 open(MAIL, '>', "/tmp/mailtemp.txt");
 
 # Define some functions to be used later
+
+my $csv = Text::CSV->new({ sep_char => ',' });
 
 sub owner_search {
 	seek $data_detailed, 0, 0;
@@ -143,13 +121,12 @@ sub print_diff {
 
 
 # Initialize database connection
-my $connect = DBI->connect("DBI:mysql:database=$database;host=$host", "$mysqluser", "$pw", {'RaiseError' => 1});
+my $connect = DBI->connect("DBI:mysql:database=$config->{db}->{database};host=$config->{db}->{host}", "$config->{db}->{user}", "$config->{db}->{pass}", {RaiseError => 1});
 
 ########## START ACCOUNT LOOP THROUGH HASH %aws_accounts
 
-keys %aws_accounts;
-foreach my $k (sort keys %aws_accounts) {
-my $v = $aws_accounts{$k};
+foreach my $k (sort keys %{$config->{aws}->{accounts}}) {
+my $v = $config->{aws}->{accounts}->{$k};
 
 # Initialize all tallies to 0.00
 foreach my $service (@SERVICES) {
@@ -553,14 +530,7 @@ if ($grab->rows == 0) {
 close(MAIL);
 
 # Set up email
-
-open(RECIPIENTS_LIST, '<', 'recipients') or die $!;
-chomp(my @recipients = <RECIPIENTS_LIST>);
-close(RECIPIENTS_LIST);
-my $to = join(',', @recipients);
-
-# TODO: Data removed
-my $from = 'root@example.com';
+my $to = join(',', @{$config->{report}->{recipients}});
 my $subject = "AWS Report for $current_day";
 
 open(MAIL, '<', "/tmp/mailtemp.txt");
@@ -571,7 +541,7 @@ open(MAILSEND, "|/usr/sbin/sendmail -t");
 print MAILSEND "Mime-Version: 1.0
 Content-Type: text/html; charset='UTF-8'
 To: $to
-From: $from
+From: $config->{report}->{from}
 Subject: $subject
 
 <!doctype html>
