@@ -2,9 +2,8 @@ version: '3.8'
 services:
   report:
     build: .
-    restart: on-failure
     volumes:
-      - '.:/root/aws-reporting'
+      - './report.html:/root/aws-reporting/report.html'
     depends_on:
       - db
   db:
@@ -13,8 +12,7 @@ services:
     expose:
       - '3306'
     volumes:
-      - './db/:/docker-entrypoint-initdb.d/'
-    restart: always
+      - './db/:/docker-entrypoint-initdb.d/:ro'
     environment:
       MYSQL_ROOT_PASSWORD: 'hunter2'
       MYSQL_DATABASE: 'aws_reporting'

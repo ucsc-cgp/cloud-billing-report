@@ -33,15 +33,16 @@ To run this script locally, you'll need a few things:
   this data.
 * `docker-compose`
 
-`config.pl.example` is pre-configured with credentials that can access the
-development MySQL instance.
-
 Then:
 
-    $ docker-compose up --abort-on-container-exit
+    $ docker-compose up --build --abort-on-container-exit --renew-anon-volumes
 
-will run the script. It will take about five minutes to run once the database
-service has spun up entirely. Maybe a little longer than that.
+will run the script. `--renew-anon-volumes` will wipe the the MySQL database
+each time we run the script (which is necessary because the script currently
+chokes if it's run more than once per day) and `--abort-on-container-exit` will
+spin everything down once the script is done running. It will take about five
+minutes to run once the database service has spun up entirely. Maybe a little
+longer than that.
 
 Before running the script, the script should be modified to output the report
 to a file, or something else besides piping it to `sendmail`. The Docker
@@ -55,16 +56,6 @@ with something like
     open(MAILSEND, "| tee report.html");
 
 You can then open the generated report in your browser.
-
-
-### Known bugs
-
-If the report service starts before the database service is finished starting,
-the script will fail and restart until it succeeds. Each restart downloads
-files from S3, so be cognizant of this and kill it if it isn't working.
-
-This should only be a problem the first time the script is run, or if anonymous
-volumes are manually purged (as with `docker up --renew-anon-volumes`).
 
 ### Without docker-compose
 
