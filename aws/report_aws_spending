@@ -17,8 +17,8 @@ die "Error parsing config file: $@" if $@;
 die "Error reading config file: $!" unless defined $config;
 
 our (%ec2_tally, $sum, %ec2_mapping, $one_up, $ec2_total, $ec2_diff);
-our (%aws_accounts, %project_spending, $data_detailed, $grand_diff);
-our ($all_total, %totals, %tally, %diff, %totals_prev, $yesterday_all_total);
+our (%project_spending, $data_detailed, $grand_diff);
+our ($all_total, %totals, %tally, %diff, %account_diff, $yesterday_all_total);
 
 my @SERVICES = ('Data Transfer', 'S3 Storage', 'AWS Developer Support',
 				'Amazon Route 53', 'Amazon Registrar', 'Amazon Data Pipeline',
@@ -44,16 +44,11 @@ chomp(my $today_mysqlformat = `/usr/bin/date +\"%Y-\%m-\%d\"`);
 chomp(my $yesterday_mysqlformat = `/usr/bin/date +\"%Y-\%m-\%d\" --date=\"-1 day\"`);
 chomp(my $day = `/usr/bin/date +\"%d\"`);
 
-# Initialize S3 creds
-
-my $access_key = 'ADD_ACCESS_KEY_HERE';
-my $secret_key = 'ADD_SECRET_KEY_HERE';
-
 my $conn = Amazon::S3->new({
-	aws_access_key_id	=> $config->{aws}->{access_key},
+	aws_access_key_id		=> $config->{aws}->{access_key},
 	aws_secret_access_key	=> $config->{aws}->{secret_key},
-	secure			=> 1,
-	retry			=> 1,
+	secure					=> 1,
+	retry					=> 1,
 });
 
 my $s3_file = "862902209576-aws-cost-allocation-$s3_file_date";
@@ -68,11 +63,8 @@ my $bucket = $conn->bucket($config->{aws}->{bucket});
 # Get the latest AWS report files (summary and detailed) from our bucket
 # Also, unzip the detailed file
 
-$bucket->get_key_filename("$s3_file", undef,
-	"$local_file");
-
-$bucket->get_key_filename("$s3_detailed_file", undef,
-	"$local_detailed_file");
+$bucket->get_key_filename("$s3_file", undef, "$local_file");
+$bucket->get_key_filename("$s3_detailed_file", undef, "$local_detailed_file");
 
 system("/usr/bin/unzip -o -qq $local_detailed_file");
 
@@ -344,7 +336,7 @@ foreach my $val (keys %ec2_tally) {
 # Grab yesterday's values from the database to compare with today's values
 
 my $grab = $connect->prepare("SELECT * FROM \`$k\` WHERE report_date = \"$yesterday_mysqlformat\"");
-$grab->execute() or print "\nCouldn't execute statement: " . $grab->errstr . "\n";
+$grab->execute();
 
 if ($grab->rows > 0) {
 	while (my @data = $grab->fetchrow_array()) {
@@ -476,7 +468,7 @@ print MAIL ($show_diff ? "<td>" . print_diff($grand_diff) . "</td>" : "") . "
 # Populate the aws_reporting database with today's dollar amounts
 
 $grab = $connect->prepare("SELECT * FROM \`$k\` WHERE report_date = \"$today_mysqlformat\"");
-$grab->execute() or print "\nCouldn't execute statement: " . $grab->errstr . "\n";
+$grab->execute();
 
 if ($grab->rows == 0) {
 	# Data is not there yet for today, let's put it in there!
@@ -516,13 +508,13 @@ $all_total += $sum;
 
 # Get previous total for showing account diff
 $grab = $connect->prepare("SELECT grand_total FROM \`$k\` WHERE report_date = \"$yesterday_mysqlformat\"");
-$grab->execute() or die "\nCouldn't execute statement: " . $grab->errstr . "\n";
+$grab->execute();
 if ($grab->rows == 0) {
-	$totals_prev{$k} = "N/A";
+	$account_diff{$k} = "N/A";
 } else {
-	my $amount = $grab->fetchrow_hashref()->{'grand_total'};
-	$totals_prev{$k} = print_diff($sum - $amount);
-	$yesterday_all_total += $amount;
+	my $yesterday = $grab->fetchrow_hashref()->{'grand_total'};
+	$account_diff{$k} = print_diff($sum - $yesterday);
+	$yesterday_all_total += ($sum - $yesterday);
 }
 
 } ########## CLOSE %aws_accounts hash loop
@@ -615,7 +607,7 @@ foreach my $account (sort keys %totals) {
 		<tr>
 			<td><a href=\"#$account\">$account</a></td>
 			<td>\$%s</td>
-			<td>$totals_prev{$account}</td>
+			<td>$account_diff{$account}</td>
 		</tr>", sprintf("%.2f", $totals{$account}));
 }
 $all_total = sprintf("%.2f", $all_total);
@@ -625,7 +617,7 @@ print MAILSEND "\
 		<tr>
 			<td>Grand total</td>
 			<td>\$$all_total</td>
-			<td>" . print_diff($all_total - $yesterday_all_total) . "</td>
+			<td>" . print_diff($yesterday_all_total) . "</td>
 		</tr>
 	</tfoot>
 </table>";
