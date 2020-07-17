@@ -6,9 +6,11 @@ use strict;
 use lib '/usr/lib64/perl5/lib/perl5';
 use warnings;
 use Amazon::S3;
-use Text::CSV;
 use DBI;
 use Hash::Util ('lock_keys');
+use Text::CSV;
+use Time::Piece;
+use Time::Seconds;
 
 chdir('/root/aws-reporting');
 
@@ -36,13 +38,14 @@ my @SERVICES = ('Data Transfer', 'S3 Storage', 'AWS Developer Support',
 				'Unknown Services');
 
 # Initialize date variables
-chomp(my $current_day = `/usr/bin/date +\"\%B \%d, \%Y\"`);
-chomp(my $first_day = `/usr/bin/date +\"\%B 01, \%Y\"`);
-chomp(my $s3_file_date = `/usr/bin/date +\"\%Y-\%m.csv\"`);
-chomp(my $local_file_date = `/usr/bin/date +\"\%Y-\%m-\%d.csv\"`);
-chomp(my $today_mysqlformat = `/usr/bin/date +\"%Y-\%m-\%d\"`);
-chomp(my $yesterday_mysqlformat = `/usr/bin/date +\"%Y-\%m-\%d\" --date=\"-1 day\"`);
-chomp(my $day = `/usr/bin/date +\"%d\"`);
+my $now = localtime();
+my $current_day = localtime->strftime("%B %d, %Y");
+my $first_day = localtime->strftime("%B 01, %Y");
+my $s3_file_date = localtime->strftime("%Y-%m.csv");
+my $local_file_date = localtime->strftime("%Y-%m-%d.csv");
+my $today_mysqlformat = localtime->strftime("%Y-%m-%d");
+my $yesterday_mysqlformat = ($now - ONE_HOUR*($now->hour + 12))->strftime("%Y-%m-%d");
+my $day = localtime->strftime("%d");
 
 my $conn = Amazon::S3->new({
 	aws_access_key_id		=> $config->{aws}->{access_key},

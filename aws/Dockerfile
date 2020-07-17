@@ -8,7 +8,6 @@ RUN curl -o /wait-for-it.sh https://raw.githubusercontent.com/vishnubob/wait-for
 RUN chmod +x /wait-for-it.sh
 COPY cpanfile /root/aws-reporting/
 RUN cpanm --installdeps .
-RUN ln -s /bin/date /usr/bin/date
 COPY report_aws_spending /root/aws-reporting/
 COPY config.pl /root/aws-reporting/
 CMD ["/wait-for-it.sh", "db:3306", "-t", "0", "--", "perl", "report_aws_spending"]
