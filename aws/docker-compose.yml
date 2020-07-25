@@ -2,6 +2,8 @@ version: '3.8'
 services:
   report:
     build: .
+    environment:
+      TZ: "America/Los_Angeles"
     volumes:
       - './report.html:/root/aws-reporting/report.html'
     depends_on:
@@ -14,5 +16,6 @@ services:
     volumes:
       - './db/:/docker-entrypoint-initdb.d/:ro'
     environment:
+      TZ: "America/Los_Angeles"
       MYSQL_ROOT_PASSWORD: 'hunter2'
       MYSQL_DATABASE: 'aws_reporting'

@@ -57,6 +57,23 @@ with something like
 
 You can then open the generated report in your browser.
 
+### Known issues
+
+If AWS is refusing your requests with a 403 error and you know that your keys
+and permissions are correctly configured, it's likely that the container clock
+has drifted (which can happen on macOS). See the [Docker documentation][clock]
+or run:
+
+    $ docker run --rm --privileged alpine hwclock -s
+
+Also refer to this [Stack Overflow answer]. You're also going to want to check
+the `TZ` environment variable in docker-compose.yml; the script will check the
+database for records based on the current day. If the time zone is set
+incorrectly, you may not see the results you expect.
+
+  [clock]: https://docs.docker.com/docker-for-mac/troubleshoot/#known-issues
+  [answer]: https://stackoverflow.com/a/39046197/317076
+
 ### Without docker-compose
 
 If you're installing without using Docker, you can install dependencies with
