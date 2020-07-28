@@ -1,11 +1,14 @@
+# Use Perl syntax!
 {
     aws => {
         access_key => 'AWS_ACCESS_KEY_HERE',
         secret_key => 'AWS_SECRET_ACCESS_KEY_HERE',
         bucket => 'S3_BUCKET_NAME_HERE',
+        report_name => 'report_name',
+        prefix => 'prefix',
         accounts => {
-            'account-name-1' => '101010101010AccountId',
-            'account-name-2' => '010101010101',
+            '123456789' => 'account-name-for-account-id-123456789',
+            '098765432' => 'account-name-for-account-id-098765432',
         }
     },
     db => {

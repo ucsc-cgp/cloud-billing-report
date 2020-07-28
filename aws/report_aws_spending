@@ -1,709 +1,492 @@
 #!/usr/bin/perl
 # Written by Erich Weiler
 # Report on BD2K AWS spending and email report
-
 use strict;
-use lib '/usr/lib64/perl5/lib/perl5';
 use warnings;
+use lib '/usr/lib64/perl5/lib/perl5';
 use Amazon::S3;
 use DBI;
-use Hash::Util ('lock_keys');
+use File::Spec;
+use File::Temp;
+use IO::Uncompress::Gunzip ('gunzip', '$GunzipError');
+use JSON;
+use List::Util 'sum';
 use Text::CSV;
 use Time::Piece;
 use Time::Seconds;
 
 chdir('/root/aws-reporting');
+my $workdir = File::Temp::tempdir(CLEANUP => 1);
 
-my $config = do("/root/aws-reporting/config.pl");
+# === Load configuration ===
+my $config = do "/root/aws-reporting/config.pl";
 die "Error parsing config file: $@" if $@;
 die "Error reading config file: $!" unless defined $config;
 
-our (%ec2_tally, $sum, %ec2_mapping, $one_up, $ec2_total, $ec2_diff);
-our (%project_spending, $data_detailed, $grand_diff);
-our ($all_total, %totals, %tally, %diff, %account_diff, $yesterday_all_total);
-
-my @SERVICES = ('Data Transfer', 'S3 Storage', 'AWS Developer Support',
-				'Amazon Route 53', 'Amazon Registrar', 'Amazon Data Pipeline',
-				'AWS Key Management Services', 'Amazon SimpleDB',
-				'Amazon Lambda Service', 'Amazon CloudTrail Service',
-				'Amazon CloudWatch Service', 'Amazon Simple Queue Service',
-				'Amazon Notification Service', 'Amazon API Gateway Service',
-				'Amazon DynamoDB Service', 'Amazon Containers for Kubernetes',
-				'Amazon Elasticsearch Service', 'Amazon Relational Database Service',
-				'Amazon Step Functions Service', 'Amazon Virtual Private Cloud Service',
-				'Amazon Secrets Manager Service', 'Amazon CloudFront',
-				'Amazon Guard Duty', 'Amazon Config Service',
-				'Amazon Cost Explorer Service', 'Amazon Business Support',
-				'Amazon X-Ray Service', 'Amazon Glue Service',
-				'Unknown Services');
-
-# Initialize date variables
-my $now = localtime();
-my $current_day = localtime->strftime("%B %d, %Y");
-my $first_day = localtime->strftime("%B 01, %Y");
-my $s3_file_date = localtime->strftime("%Y-%m.csv");
-my $local_file_date = localtime->strftime("%Y-%m-%d.csv");
-my $today_mysqlformat = localtime->strftime("%Y-%m-%d");
-my $yesterday_mysqlformat = ($now - ONE_HOUR*($now->hour + 12))->strftime("%Y-%m-%d");
-my $day = localtime->strftime("%d");
-
-my $conn = Amazon::S3->new({
-	aws_access_key_id		=> $config->{aws}->{access_key},
-	aws_secret_access_key	=> $config->{aws}->{secret_key},
-	secure					=> 1,
-	retry					=> 1,
+# === Download report manifest and archive ===
+my $this_month = localtime->strftime("%Y%m01");
+my $next_month = (localtime() + ONE_MONTH)->strftime("%Y%m01");
+my $report_prefix = "$config->{aws}{prefix}/$config->{aws}{report_name}/";
+$report_prefix .= "$this_month-$next_month";
+my $manifest_name = "$config->{aws}{report_name}-Manifest.json";
+my $manifest_path = "$report_prefix/$manifest_name";
+my $local_manifest_path = File::Spec->catfile($workdir, $manifest_name);
+my $s3 = Amazon::S3->new({
+    aws_access_key_id => $config->{aws}{access_key},
+    aws_secret_access_key => $config->{aws}{secret_key},
+    secure => 1,
+    retry => 1,
 });
+my $bucket = $s3->bucket($config->{aws}{bucket});
+# This file is overwritten by AWS whenever a new report is generated with
+# the path to the latest report.
+$bucket->get_key_filename($manifest_path, undef, $local_manifest_path)
+    or die "s3: no such key $manifest_path, stopped";
+my $manifest_data = do {
+    local $/ = undef;
+    open my $manifest_fh, "<:encoding(utf8)", $local_manifest_path
+        or die "$local_manifest_path: $!, stopped";
+    <$manifest_fh>;
+};
+my $manifest = decode_json $manifest_data;
+# Reports that are sufficiently large can be split into multiple files.
+# That is not the case for us right now.
+my $archive_path = $manifest->{"reportKeys"}[0];
+my $local_archive_path = File::Spec->catfile($workdir, "report.gz");
+$bucket->get_key_filename($archive_path, undef, $local_archive_path)
+    or die "s3: no such key $local_archive_path, stopped";
+my $local_report_path = File::Spec->catfile($workdir, "report.csv");
+gunzip $local_archive_path => $local_report_path
+    or die "$local_archive_path: $GunzipError, stopped";
 
-my $s3_file = "862902209576-aws-cost-allocation-$s3_file_date";
-my $local_file = "/root/aws-reporting/862902209576-aws-cost-allocation-$local_file_date";
-my $s3_detailed_file = "862902209576-aws-billing-detailed-line-items-with-resources-and-tags-$s3_file_date.zip";
-my $local_detailed_file = "/root/aws-reporting/862902209576-aws-billing-detailed-line-items-with-resources-and-tags-$local_file_date.zip";
-my $local_detailed_file_unzipped = "/root/aws-reporting/862902209576-aws-billing-detailed-line-items-with-resources-and-tags-$s3_file_date";
-my $tmpfile = "/root/aws-reporting/tmpfile";
+# === Parse CSV ===
+# The report is parsed into three primary structures:
+my %service_by_account;
+# my %service_by_account = {
+#     12345678 => {
+#         "AWS Simple Storage Service" => 0.12343,
+#         "AWS Key Management Service" => 1.5324,
+#     }
+# }
+my %ec2_owner_by_account;
+# my %ec2_owner_by_account = {
+#     12345678 => {
+#         "owner@example.com" => 5.242,
+#         "owner2@example.com" => 0.013,
+#     }
+# }
+my %ec2_by_name;
+# my %ec2_by_name = {
+#     "my-name-tag" => 82.666,
+#     "(untagged)" => 393933.21,
+# }
+my $csv = Text::CSV->new({ binary => 1, auto_diag => 1, strict => 1 });
+open my $report, "<:encoding(utf8)", $local_report_path
+    or die "$local_report_path: $!, stopping";
+my @cols = @{$csv->getline ($report)};
+my $row = {};
+$csv->bind_columns (\@{$row}{@cols});
+while ($csv->getline ($report)) {
+    my $account_id = $row->{"lineItem/UsageAccountId"};
+    my $service = $row->{"product/ProductName"};
+    my $amount = $row->{"lineItem/BlendedCost"};
+    $service_by_account{$account_id}->{$service} += $amount;
+    if ($service eq "Amazon Elastic Compute Cloud") {
+        my $owner = $row->{"resourceTags/user:Owner"};
+        my $name = $row->{"resourceTags/user:Name"};
+        if (!defined $name or $name eq "") {
+            $ec2_by_name{"(untagged)"} += $amount;
+        } else {
+            $ec2_by_name{$name} += $amount;
+        }
+        if (!defined $owner or $owner eq "") {
+            $ec2_owner_by_account{$account_id}{"(untagged)"} += $amount;
+        } else {
+            $ec2_owner_by_account{$account_id}->{$owner} += $amount;
+        }
+    }
+}
+close $report or warn "$local_report_path: $!";
 
-my $bucket = $conn->bucket($config->{aws}->{bucket});
+# === Read yesterday's aggregate data from database ===
+my @SERVICES = ('AWS Data Transfer',
+                'Amazon Simple Storage Service',
+                'AWS Support (Developer)',
+                'Amazon Route 53',
+                'Amazon Data Pipeline',  # TODO: may deviate from CUR name
+                'AWS Key Management Service',
+                'Amazon SimpleDB',
+                'Amazon CloudWatch',
+                'AWS CloudTrail',
+                'Amazon Simple Queue Service',
+                'Amazon Simple Notification Service',
+                'AWS Lambda',
+                'Amazon Registrar',
+                'Amazon Elastic Compute Cloud',
+                'Amazon API Gateway',
+                'Amazon DynamoDB',
+                'Amazon Elastic Container Service for Kubernetes',
+                'Amazon Elasticsearch Service',
+                'Amazon Relational Database Service',
+                'AWS Step Functions',
+                'Amazon Virtual Private Cloud',
+                'AWS Secrets Manager',
+                'Amazon CloudFront',
+                'Amazon GuardDuty',
+                'AWS Config',
+                'Amazon Cost Explorer Service',  # TODO: may deviate from CUR name
+                'Amazon Business Support',  # TODO: may deviate from CUR name
+                'Amazon X-Ray Service',  # TODO: may deviate from CUR name
+                'AWS Glue',
+                'Unknown Services');
+my $db = DBI->connect("DBI:mysql:database=$config->{db}{database};host=$config->{db}{host}",
+                      $config->{db}{user}, $config->{db}{pass}, {RaiseError => 1})
+    or die "$DBI::errstr, stopping";
+my $now = localtime();
+my $yesterday_mysqlformat = ($now - ONE_HOUR*($now->hour + 12))->strftime("%Y-%m-%d");
+my $is_first_day = localtime->strftime("%d") eq "01";
+my $missing = 0;
+my %service_by_account_yesterday;
+# %service_by_account_yesterday has the same form as %service_by_account, but
+# has yesterday's data
+for my $account_id (keys %service_by_account) {
+    # On the first day of the month, the diff should equal today's total
+    if ($is_first_day) {
+        for my $service (keys %{$service_by_account{$account_id}}) {
+            $service_by_account_yesterday{$account_id}{$service} = 0;
+        }
+        next;
+    }
+    my $account_name = $config->{aws}{accounts}{$account_id};
+    if (!defined $account_name) {
+        $service_by_account_yesterday{$account_id}{"_"} = 0;;
+        warn "unknown account $account_id: add it to config.pl, skipping diff";
+        next;
+    }
+    my $stmt = $db->prepare("SELECT data_tally, s3_tally, support_dev_tally,
+        route53_tally, datapipeline_tally, awskms_tally, simpledb_tally,
+        cloudwatch_tally, cloudtrail_tally, queueservice_tally,
+        notification_tally, lambda_tally, registrar_tally, ec2_total,
+        amazonapigateway_tally, amazondynamodb_tally, amazoneks_tally,
+        amazones_tally, amazonrds_tally, amazonstates_tally, amazonvpc_tally,
+        awssecretsmanager_tally, cloudfront_tally, guardduty_tally,
+        awsconfig_tally, costexplorer_tally, support_bus_tally, xray_tally,
+        awsglue_tally, unknown_tally FROM \`$account_name\` WHERE report_date = ?");
+    $stmt->execute($yesterday_mysqlformat);
+    $stmt->bind_columns(map {\$service_by_account_yesterday{$account_id}{$_}} @SERVICES);
+    if ($stmt->rows == 0) {
+        $missing = 1;
+        warn "could not find historical data for account $account_id";
+    }
+    while ($stmt->fetchrow_arrayref) {}
+}
 
-# Get the latest AWS report files (summary and detailed) from our bucket
-# Also, unzip the detailed file
-
-$bucket->get_key_filename("$s3_file", undef, "$local_file");
-$bucket->get_key_filename("$s3_detailed_file", undef, "$local_detailed_file");
-
-system("/usr/bin/unzip -o -qq $local_detailed_file");
-
-# Open MAIL temporary file to populate with email data
-
-open(MAIL, '>', "/tmp/mailtemp.txt");
-
-# Define some functions to be used later
-
-my $csv = Text::CSV->new({ sep_char => ',' });
-
-sub owner_search {
-	seek $data_detailed, 0, 0;
-	while (my $line_detailed = <$data_detailed>) {
-		chomp $line_detailed;
-		if ($csv->parse($line_detailed)) {
-			my @fields_detailed = $csv->fields();
-			if ($_[0] eq $fields_detailed[21]) {
-				if (!($fields_detailed[25])) {
-					$one_up = "untagged";
-					return $one_up;
-					last;
-				} else {
-					$one_up = "$fields_detailed[25]";
-					return $one_up;
-					last;
-				}
-			}
-
-		}
-	}
+# === Insert new aggregate data into database ===
+my $exists = 0;
+my $today_mysqlformat = localtime->strftime("%Y-%m-%d");
+for my $account_id (keys %service_by_account) {
+    my $account_name = $config->{aws}{accounts}{$account_id};
+    if (!defined $account_name) {
+        warn "unknown account $account_id: add it to config.pl";
+        next;
+    }
+    my $unknown_total = 0;
+    outer: foreach my $service (keys %{$service_by_account_yesterday{$account_id}}) {
+        # Sum services not tracked in database into "Unknown Services"
+        foreach my $service_ (@SERVICES) {
+            next outer if $service_ eq $service;
+        }
+        $unknown_total += $service_by_account{$account_id}{$service};
+    }
+    my $stmt = $db->prepare("SELECT report_date FROM \`$account_name\` WHERE report_date = ?");
+    $stmt->execute($today_mysqlformat);
+    if ($stmt->rows == 0) {
+        # Data is not there yet for today, let's put it in there!
+        my $ins = $db->prepare("INSERT INTO \`$account_name\`
+        (report_date, data_tally, s3_tally, support_dev_tally, route53_tally, datapipeline_tally,
+        awskms_tally, simpledb_tally, cloudwatch_tally, cloudtrail_tally,
+        queueservice_tally, notification_tally, lambda_tally, registrar_tally,
+        ec2_total, amazonapigateway_tally, amazondynamodb_tally, amazoneks_tally,
+        amazones_tally, amazonrds_tally, amazonstates_tally, amazonvpc_tally,
+        awssecretsmanager_tally, cloudfront_tally, guardduty_tally,
+        awsconfig_tally, costexplorer_tally, support_bus_tally, xray_tally,
+        awsglue_tally, unknown_tally, grand_total) VALUES
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?)");
+        $ins->execute($today_mysqlformat,
+            $service_by_account{$account_id}{'AWS Data Transfer'},
+            $service_by_account{$account_id}{'Amazon Simple Storage Service'},
+            $service_by_account{$account_id}{'AWS Support (Developer)'},
+            $service_by_account{$account_id}{'Amazon Route 53'},
+            $service_by_account{$account_id}{'Amazon Data Pipeline'},
+            $service_by_account{$account_id}{'AWS Key Management Service'},
+            $service_by_account{$account_id}{'Amazon SimpleDB'},
+            $service_by_account{$account_id}{'Amazon CloudWatch'},
+            $service_by_account{$account_id}{'AWS CloudTrail'},
+            $service_by_account{$account_id}{'Amazon Simple Queue Service'},
+            $service_by_account{$account_id}{'Amazon Simple Notification Service'},
+            $service_by_account{$account_id}{'AWS Lambda'},
+            $service_by_account{$account_id}{'Amazon Registrar'},
+            $service_by_account{$account_id}{'Amazon Elastic Compute Cloud'},
+            $service_by_account{$account_id}{'Amazon API Gateway'},
+            $service_by_account{$account_id}{'Amazon DynamoDB'},
+            $service_by_account{$account_id}{'Amazon Elastic Container Service for Kubernetes'},
+            $service_by_account{$account_id}{'Amazon Elasticsearch Service'},
+            $service_by_account{$account_id}{'Amazon Relational Database Service'},
+            $service_by_account{$account_id}{'AWS Step Functions'},
+            $service_by_account{$account_id}{'Amazon Virtual Private Cloud'},
+            $service_by_account{$account_id}{'AWS Secrets Manager'},
+            $service_by_account{$account_id}{'Amazon CloudFront'},
+            $service_by_account{$account_id}{'Amazon GuardDuty'},
+            $service_by_account{$account_id}{'AWS Config'},
+            $service_by_account{$account_id}{'Amazon Cost Explorer Service'},
+            $service_by_account{$account_id}{'Amazon Business Support'},
+            $service_by_account{$account_id}{'Amazon X-Ray Service'},
+            $service_by_account{$account_id}{'AWS Glue'},
+            $unknown_total,
+            sum values %{$service_by_account{$account_id}});
+    } else {
+        # Data already exists in the database. Uh oh.
+        $exists = 1;
+    }
 }
 
 sub print_diff {
-	if ($_[0] eq '') {
-		return("N/A");
-	} elsif ($_[0] > 0) {
-		return("\$" . sprintf("%.2f", $_[0]));
-	} elsif ($_[0] < 0) {
-		my $absolute = sprintf("%.2f", abs($_[0]));
-		return("<span class='neg'>-\$$absolute</span>");
-	} else {
-		return("");
-	}
+    # Some services do not have history stored because of the current db schema
+    # and will be passed to `print_diff` as undef
+    if ($_[0] eq "" or !defined $_[0]) {
+        return "N/A";
+    # Ignore sufficiently small amounts
+    } elsif ($_[0] > 0.01) {
+        return sprintf("\$%.2f", $_[0]);
+    } elsif ($_[0] < -0.01) {
+        # A negative value is unlikely but possible in the event of, for
+        # example, a credit from AWS
+        my $absolute = sprintf("-\$%.2f", abs($_[0]));
+        return "<span class='neg'>$absolute</span>";
+    } else {
+        return "";
+    }
 }
 
-
-# Initialize database connection
-my $connect = DBI->connect("DBI:mysql:database=$config->{db}->{database};host=$config->{db}->{host}", "$config->{db}->{user}", "$config->{db}->{pass}", {RaiseError => 1});
-
-########## START ACCOUNT LOOP THROUGH HASH %aws_accounts
-
-foreach my $k (sort keys %{$config->{aws}->{accounts}}) {
-my $v = $config->{aws}->{accounts}->{$k};
-
-# Initialize all tallies to 0.00
-foreach my $service (@SERVICES) {
-	$tally{$service} = 0.00;
-	$diff{$service} = 0.00;
-}
-$sum = 0.00;
-$ec2_total = 0.00;
-undef %ec2_tally;
-$ec2_tally{'untagged'} = 0.00;
-
-# Now that %tally and %diff are initialized with keys from @SERVICES, we lock
-# the keys so that trying to read or write to a key that doesn't already exist
-# will cause an error. Because references to all of the keys in %tally and
-# %diff sometimes need to be hardocded, this is helpful in detecting misspellings
-# of key names.
-lock_keys(%tally);
-lock_keys(%diff);
-
-# Open the detailed file for recursive owner searching and set up searching function
-# This also reduces the file size of the detailed file by 90%, making the program
-# work way faster.
-
-open($data_detailed, '<', $local_detailed_file_unzipped) or die "Could not open '$local_detailed_file_unzipped' $!\n";
-
-open(my $smallfile, '>', $tmpfile) or die "Could not open '$tmpfile' $!\n";
-
-while (my $line_detailed = <$data_detailed>) {
-	my @line_elements = split /,/, $line_detailed;
-
-	if (($line_detailed =~ /RunInstances/) && ($line_elements[2] eq "\"$v\"")) {
-		print $smallfile "$line_detailed";
-	}
+sub sum_undef {
+    return sum(grep(defined, @_));
 }
 
-close($data_detailed);
-close($smallfile);
-
-open($data_detailed, '<', $tmpfile) or die "Could not open '$tmpfile' $!\n";
-
-# Open the CSV file and iterate through each line to grab all the data
-
-open(my $data, '<', $local_file) or die "Could not open '$local_file' $!\n";
-while (my $line = <$data>) {
-	chomp $line;
-
-	if ($csv->parse($line)) {
-
-		my @fields = $csv->fields();
-
-		# Exclude the first couple and the last couple lines of the file
-
-		if (($fields[0] =~ /see your/) || ($fields[0] =~ /InvoiceID/) || ($fields[0] eq "")) {
-			next;
-		}
-
-		# Exclude the Invoice Cost Summary
-
-		if ($fields[19] =~ /Total amount for invoice Estimated/) {
-			next;
-		}
-
-		# Exclude line items with no or very minimal cost
-
-		if (($fields[29] < 0.001) && ($fields[29] > 0)) {
-			 next;
-		}
-
-		if ($fields[29] == 0) {
-			 next;
-		}
-
-		# Exclude lines that are not associated with this account
-
-		if ($fields[2] ne "$v") {
-			 next;
-		}
-
-		# Round dollar amount to two decimal places
-
-		$fields[29] = sprintf("%.2f", $fields[29]);
-
-		# Add up total money
-		if ($fields[12] =~ /AmazonS3/) {
-			$tally{"S3 Storage"} += $fields[29];
-		} elsif ($fields[12] =~ /AWSCloudTrail/) {
-			$tally{"Amazon CloudTrail Service"} += $fields[29];
-		} elsif ($fields[12] =~ /AmazonCloudWatch/) {
-			$tally{"Amazon CloudWatch Service"} += $fields[29];
-		} elsif ($fields[12] =~ /AmazonSNS/) {
-			$tally{"Amazon Notification Service"} += $fields[29];
-		} elsif ($fields[12] =~ /AWSLambda/) {
-			$tally{"Amazon Lambda Service"} += $fields[29];
-		} elsif ($fields[12] =~ /AWSQueueService/) {
-			$tally{"Amazon Simple Queue Service"} += $fields[29];
-		} elsif ($fields[12] =~ /AWSDataTransfer/) {
-			$tally{"Data Transfer"} += $fields[29];
-		} elsif ($fields[12] =~ /AWSDeveloperSupport/) {
-			$tally{"AWS Developer Support"} += $fields[29];
-		} elsif ($fields[12] =~ /AmazonRoute53/) {
-			$tally{"Amazon Route 53"} += $fields[29];
-		} elsif ($fields[12] =~ /datapipeline/) {
-			$tally{"Amazon Data Pipeline"} += $fields[29];
-		} elsif ($fields[12] =~ /awskms/) {
-			$tally{"AWS Key Management Services"} += $fields[29];
-		} elsif ($fields[12] =~ /AmazonSimpleDB/) {
-			$tally{"Amazon SimpleDB"} += $fields[29];
-		} elsif ($fields[12] =~ /AmazonRegistrar/) {
-			$tally{"Amazon Registrar"} += $fields[29];
-		} elsif ($fields[12] =~ /AmazonApiGateway/) {
-			$tally{"Amazon API Gateway Service"} += $fields[29];
-		} elsif ($fields[12] =~ /AmazonDynamoDB/) {
-			$tally{"Amazon DynamoDB Service"} += $fields[29];
-		} elsif ($fields[12] =~ /AmazonEKS/) {
-			$tally{"Amazon Containers for Kubernetes"} += $fields[29];
-		} elsif ($fields[12] =~ /AmazonES/) {
-			$tally{"Amazon Elasticsearch Service"} += $fields[29];
-		} elsif ($fields[12] =~ /AmazonRDS/) {
-			$tally{"Amazon Relational Database Service"} += $fields[29];
-		} elsif ($fields[12] =~ /AmazonStates/) {
-			$tally{"Amazon Step Functions Service"} += $fields[29];
-		} elsif ($fields[12] =~ /AmazonVPC/) {
-			$tally{"Amazon Virtual Private Cloud Service"} += $fields[29];
-		} elsif ($fields[12] =~ /AWSSecretsManager/) {
-			$tally{"Amazon Secrets Manager Service"} += $fields[29];
-		} elsif ($fields[12] =~ /AmazonCloudFront/) {
-			$tally{"Amazon CloudFront"} += $fields[29];
-		} elsif ($fields[12] =~ /AmazonGuardDuty/) {
-			$tally{"Amazon Guard Duty"} += $fields[29];
-		} elsif ($fields[12] =~ /AWSConfig/) {
-			$tally{"Amazon Config Service"} += $fields[29];
-		} elsif ($fields[12] =~ /AWSCostExplorer/) {
-			$tally{"Amazon Cost Explorer Service"} += $fields[29];
-		} elsif ($fields[12] =~ /AWSSupportBusiness/) {
-			$tally{"Amazon Business Support"} += $fields[29];
-		} elsif ($fields[12] =~ /AWSXRay/) {
-			$tally{"Amazon X-Ray Service"} += $fields[29];
-		} elsif ($fields[12] =~ /AWSGlue/) {
-			$tally{"Amazon Glue Service"} += $fields[29];
-		} elsif ($fields[12] =~ /AmazonEC2/) {
-#			print "Searching for owner of new EC2 line item...\n";
-			if (!($fields[32] =~ /[a-zA-Z]/)) {
-#				print "Found Original Owner \= untagged : for cost \$$fields[29]\n\n";
-				$ec2_tally{'untagged'} += $fields[29];
-
-			} elsif ($fields[32] =~ /^i\-/) {
-
-				my $search = $fields[32];
-
-				while (1) {
-					 if ($search =~ /^i\-/) {
-						if ($ec2_mapping{$search}) {
-#							print "BANG1 \t$search is owned by $ec2_mapping{$search}\n";
-							$search = $ec2_mapping{$search};
-						} else {
-							my $found = owner_search($search);
-							if ($found eq "") {
-								$found = "EBS_Volumes_Without_Owner";
-							}
-#							print "BANG2 \t$search is owned by $found\n";
-							$ec2_mapping{$search} = "$found";
-							$search = "$found";
-						}
-					} else {
-						$fields[32] = $search;
-						last;
-					}
-				}
-
-				if (!($ec2_tally{$fields[32]})) {
-#					print "BANG3 Found Original Owner \= $fields[32] : for cost \$$fields[29]\n\n";
-					$ec2_tally{$fields[32]} = $fields[29];
-				} else {
-#					print "BANG4 Found Original Owner \= $fields[32] : for cost \$$fields[29]\n\n";
-					$ec2_tally{$fields[32]} += $fields[29];
-				}
-
-			} elsif (!($ec2_tally{$fields[32]})) {
-#				print "BANG5 Found Original Owner \= $fields[32] : for cost \$$fields[29]\n\n";
-				if (!($fields[32] =~ /[a-zA-Z]/)) {
-#					print "Found Original Owner \= untagged : for cost \$$fields[29]\n\n";
-					$ec2_tally{'untagged'} += $fields[29];
-				} else {
-					$ec2_tally{$fields[32]} = $fields[29];
-				}
-			} else {
-#				print "BANG6 Found Original Owner \= $fields[32] : for cost \$$fields[29]\n\n";
-				$ec2_tally{$fields[32]} += $fields[29];
-			}
-		} else {
-			# We haven't seen the service before, flag as unknown and tally unknown costs
-#			print "Found unknown service!: $fields[12]\n";
-			$tally{"Unknown Services"} += $fields[29];
-		}
-
-		$sum += $fields[29];
-	} else {
-		warn "Line could not be parsed: $line\n";
-	}
-}
-
-# Close the summary file and the detailed file handles
-close($data);
-close($data_detailed);
-
-# Convert all dollar values in the %ec2_tally hash to go out to two decimals
-# We don't care about fractions of a cent
-# Then add up all the amounts to get the total for EC2 usage
-
-foreach my $val (keys %ec2_tally) {
-	$ec2_tally{$val} = sprintf("%.2f", $ec2_tally{$val});
-	$ec2_total += $ec2_tally{$val};
-}
-
-# Grab yesterday's values from the database to compare with today's values
-
-my $grab = $connect->prepare("SELECT * FROM \`$k\` WHERE report_date = \"$yesterday_mysqlformat\"");
-$grab->execute();
-
-if ($grab->rows > 0) {
-	while (my @data = $grab->fetchrow_array()) {
-		$diff{"Data Transfer"} = $tally{"Data Transfer"} - $data[1];
-		$diff{"S3 Storage"} = $tally{"S3 Storage"} - $data[2];
-		$diff{"AWS Developer Support"} = $tally{"AWS Developer Support"} - $data[3];
-		$diff{"Amazon Route 53"} = $tally{"Amazon Route 53"} - $data[4];
-		$diff{"Amazon Data Pipeline"} = $tally{"Amazon Data Pipeline"} - $data[5];
-		$diff{"AWS Key Management Services"} = $tally{"AWS Key Management Services"} - $data[6];
-		$diff{"Amazon SimpleDB"} = $tally{"Amazon SimpleDB"} - $data[7];
-		$diff{"Amazon CloudWatch Service"} = $tally{"Amazon CloudWatch Service"} - $data[8];
-		$diff{"Amazon CloudTrail Service"} = $tally{"Amazon CloudTrail Service"} - $data[9];
-		$diff{"Amazon Simple Queue Service"} = $tally{"Amazon Simple Queue Service"} - $data[10];
-		$diff{"Amazon Notification Service"} = $tally{"Amazon Notification Service"} - $data[11];
-		$diff{"Amazon Lambda Service"} = $tally{"Amazon Lambda Service"} - $data[12];
-		$diff{"Amazon Registrar"} = $tally{"Amazon Registrar"} - $data[13];
-		$ec2_diff = ($ec2_total - $data[14]);
-		$diff{"Amazon API Gateway Service"} = $tally{"Amazon API Gateway Service"} - $data[15];
-		$diff{"Amazon DynamoDB Service"} = $tally{"Amazon DynamoDB Service"} - $data[16];
-		$diff{"Amazon Containers for Kubernetes"} = $tally{"Amazon Containers for Kubernetes"} - $data[17];
-		$diff{"Amazon Elasticsearch Service"} = $tally{"Amazon Elasticsearch Service"} - $data[18];
-		$diff{"Amazon Relational Database Service"} = $tally{"Amazon Relational Database Service"} - $data[19];
-		$diff{"Amazon Step Functions Service"} = $tally{"Amazon Step Functions Service"} - $data[20];
-		$diff{"Amazon Virtual Private Cloud Service"} = $tally{"Amazon Virtual Private Cloud Service"} - $data[21];
-		$diff{"Amazon Secrets Manager Service"} = $tally{"Amazon Secrets Manager Service"} - $data[22];
-		$diff{"Amazon CloudFront"} = $tally{"Amazon CloudFront"} - $data[23];
-		$diff{"Amazon Guard Duty"} = $tally{"Amazon Guard Duty"} - $data[24];
-		$diff{"Amazon Config Service"} = $tally{"Amazon Config Service"} - $data[25];
-		$diff{"Amazon Cost Explorer Service"} = $tally{"Amazon Cost Explorer Service"} - $data[26];
-		$diff{"Amazon Business Support"} = $tally{"Amazon Business Support"} - $data[27];
-		$diff{"Amazon X-Ray Service"} = $tally{"Amazon X-Ray Service"} - $data[28];
-		$diff{"Amazon Glue Service"} = $tally{"Amazon Glue Service"} - $data[29];
-		$diff{"Unknown Services"} = $tally{"Unknown Services"} - $data[30];
-		$grand_diff = ($sum - $data[31]);
-	}
-}
-
-# To get anchor links to function properly in Gmail, we need to use a certain
-# a[href][name] syntax. For the record, this is:
-#   1. Not compliant with the HTML5 standard, which does not specify a `name`
-#      attribute for <a>
-#   2. Not compliant with any HTML standard, as "XML empty element syntax isn't
-#      supported in any flavor of HTML served as text/html"
-#   3. Is against Google's own semantic markup guidelines. In fact, this markup
-#      is something that Google explicitly recommends against.
-#   4. Not documented anywhere in Google's reference for HTML content in emails
-# And yes, I have tried literally everything else.
-print MAIL "<a name=\"$k\" id=\"$k\"></a><h2>Report for account $k</h2>";
-
-my $no_results = $grab->rows == 0;
-my $is_first_day = $day eq "01";
-my $show_diff = not ($is_first_day || $no_results);
-
-if ($is_first_day) {
-	print MAIL "Amazon Web Services Report for $first_day";
-	print MAIL "Being the first of the month, all tallies are reset\!<br>";
-} else {
-	print MAIL "Amazon Web Services Report from $first_day - $current_day<br>";
-}
-if ($no_results) {
-	print MAIL "<p style=\"color: red;\">NOTICE: Unable to grab yesterday\'s";
-	print MAIL " tallies for comparison from the database, only today\'s";
-	print MAIL " tallies are shown below.</p>";
-}
-print MAIL "\
-<table>
-	<caption>EC2 Breakdown by Owner</caption>
-	<thead>
-		<tr>
-			<th>Owner</th>
-			<th>This month</th>
-		</tr>
-	</thead>
-	<tbody>";
-for (keys %ec2_tally) {
-	print MAIL "
-		<tr>
-			<td>$_</td>
-			<td>\$$ec2_tally{$_}</td>
-		</tr>";
-}
-printf MAIL ("\
-	</tbody>
-	<tfoot>
-		<tr>
-			<td>Grand total</td>
-			<td>\$%s", sprintf("%.2f", $ec2_total));
-print MAIL ($show_diff ? "<br>(" . print_diff($ec2_diff) . ")" : "") . "</td>
-		</tr>
-	</tfoot>
-</table>
-<br>
-<table>
-	<thead>
-		<tr>
-			<th>Service</th>
-			<th>This month</th>
-			" . ($show_diff ? "<th>Yesterday</th>" : "") . "
-		</tr>
-	</thead>
-	<tbody>";
-
-my $amt = 0.00;
-my $diff = 0.00;
-foreach my $service (@SERVICES) {
-	$amt = sprintf("%.2f", $tally{$service});
-	$diff = sprintf("%.2f", $diff{$service});
-	if ($amt eq "0.00" and $diff eq "0.00") {
-		next;
-	}
-	print MAIL "
-		<tr>
-			<td>$service</td>
-			<td>\$$amt</td>
-			" . ($show_diff ? "<td>" . print_diff($diff) . "</td>" : "") . "
-		</tr>";
-}
-printf MAIL ("
-	</tbody>
-	<tfoot>
-		<tr>
-			<td>Grand total</td>
-			<td>\$%s</td>", sprintf("%.2f", $sum));
-print MAIL ($show_diff ? "<td>" . print_diff($grand_diff) . "</td>" : "") . "
-		</tr>
-	</tfoot>
-</table>";
-
-# Populate the aws_reporting database with today's dollar amounts
-
-$grab = $connect->prepare("SELECT * FROM \`$k\` WHERE report_date = \"$today_mysqlformat\"");
-$grab->execute();
-
-if ($grab->rows == 0) {
-	# Data is not there yet for today, let's put it in there!
-	$connect->do("INSERT INTO \`$k\`
-	(report_date, data_tally, s3_tally, support_dev_tally, route53_tally, datapipeline_tally,
-	awskms_tally, simpledb_tally, cloudwatch_tally, cloudtrail_tally,
-	queueservice_tally, notification_tally, lambda_tally, registrar_tally,
-	ec2_total, amazonapigateway_tally, amazondynamodb_tally, amazoneks_tally,
-	amazones_tally, amazonrds_tally, amazonstates_tally, amazonvpc_tally,
-	awssecretsmanager_tally, cloudfront_tally, guardduty_tally,
-	awsconfig_tally, costexplorer_tally, support_bus_tally, xray_tally,
-	awsglue_tally, unknown_tally, grand_total) VALUES
-	(\"$today_mysqlformat\", \"$tally{'Data Transfer'}\", \"$tally{'S3 Storage'}\",
-	\"$tally{'AWS Developer Support'}\", \"$tally{'Amazon Route 53'}\",
-	\"$tally{'Amazon Data Pipeline'} \", \"$tally{'AWS Key Management Services'}\",
-	\"$tally{'Amazon SimpleDB'}\", \"$tally{'Amazon CloudWatch Service'}\",
-	\"$tally{'Amazon CloudTrail Service'}\", \"$tally{'Amazon Simple Queue Service'}\",
-	\"$tally{'Amazon Notification Service'}\", \"$tally{'Amazon Lambda Service'}\",
-	\"$tally{'Amazon Registrar'}\", \"$ec2_total\",
-	\"$tally{'Amazon API Gateway Service'}\", \"$tally{'Amazon DynamoDB Service'}\",
-	\"$tally{'Amazon Containers for Kubernetes'}\", \"$tally{'Amazon Elasticsearch Service'}\",
-	\"$tally{'Amazon Relational Database Service'}\", \"$tally{'Amazon Step Functions Service'}\",
-	\"$tally{'Amazon Virtual Private Cloud Service'}\", \"$tally{'Amazon Secrets Manager Service'}\",
-	\"$tally{'Amazon CloudFront'}\", \"$tally{'Amazon Guard Duty'}\",
-	\"$tally{'Amazon Config Service'}\", \"$tally{'Amazon Cost Explorer Service'}\",
-	\"$tally{'Amazon Business Support'}\", \"$tally{'Amazon X-Ray Service'}\",
-	\"$tally{'Amazon Glue Service'}\", \"$tally{'Unknown Services'}\", \"$sum\")");
-
-} else {
-	print MAIL '<p style="color:red;">Either an entry for today already ';
-	print MAIL "exists in the database, or there was a problem checking for ";
-	print MAIL "data for today in the DB\!</p>";
-}
-
-$totals{$k} = $sum;
-$all_total += $sum;
-
-# Get previous total for showing account diff
-$grab = $connect->prepare("SELECT grand_total FROM \`$k\` WHERE report_date = \"$yesterday_mysqlformat\"");
-$grab->execute();
-if ($grab->rows == 0) {
-	$account_diff{$k} = "N/A";
-} else {
-	my $yesterday = $grab->fetchrow_hashref()->{'grand_total'};
-	$account_diff{$k} = print_diff($sum - $yesterday);
-	$yesterday_all_total += ($sum - $yesterday);
-}
-
-} ########## CLOSE %aws_accounts hash loop
-
-close(MAIL);
-
-# Set up email
-my $to = join(',', @{$config->{report}->{recipients}});
+# === Generate email ===
+# Write email to disk first so that we don't send out a borked email if this
+# script fails before completion
+my $local_email_draft_path = File::Spec->catfile($workdir, 'mailtmp.txt');
+open my $MAIL, '>:encoding(utf8)', $local_email_draft_path
+    or die "$local_email_draft_path: $!, stopped";
+my $current_day = localtime->strftime("%B %d, %Y");
 my $subject = "AWS Report for $current_day";
-
-open(MAIL, '<', "/tmp/mailtemp.txt");
-open(MAILSEND, "|/usr/sbin/sendmail -t");
-
 # Styles are custom and cherry-picked from pure-css 1.0.1
 # For styles to show in gmail, they must be in <head> and not <body>
-print MAILSEND "Mime-Version: 1.0
+print $MAIL "Mime-Version: 1.0
 Content-Type: text/html; charset='UTF-8'
-To: $to
-From: $config->{report}->{from}
+To: " . join(',', @{$config->{report}{recipients}}) . "
+From: $config->{report}{from}
 Subject: $subject
 
 <!doctype html>
 <html lang='en'>
 <head>
-	<meta charset='utf-8'>
-	<title>$subject</title>
-	<style type='text/css'>
-		td + td, th + th { text-align: right; }	/* All columns except first align right */
-		table {
-			border-collapse: collapse;
-			border-spacing: 0;
-			empty-cells: show;
-			border: 1px solid #cbcbcb;
-		}
-		thead {
-			background-color: #e0e0e0;
-			color: #000;
-			text-align: left;
-			vertical-align: bottom;
-		}
-		th, td {
-			border-width: 0 0 1px 0;
-			border-bottom: 1px solid #cbcbcb;
-			font-size: inherit;
-			margin: 0;
-			overflow: visible;
-			padding: .5em 1em;
-		}
-		td { background-color: transparent; }
-		caption {
-			color: #000;
-			padding: 1em 0;
-			text-align: center;
-			font: italic 85%/1 arial,sans-serif;
-		}
-		body {
-			margin: 1em;
-			font-family: sans-serif;
-			-webkit-text-size-adjust: 100%;
-			ms-text-size-adjust: 100%;
-		}
-		a { background-color: transparent }
-		h1 { font-size:2em; margin:.67em 0; }
-		tbody > tr:hover, tfoot > tr:hover { background-color: #f2f2f2; }
-		tfoot { font-weight: 700; }
-		.neg { font-weight: 700; color: red; }
-	</style>
+    <meta charset='utf-8'>
+    <title>$subject</title>
+    <style type='text/css'>
+        td + td, th + th { text-align: right; }  /* All columns except first align right */
+        table {
+            border-collapse: collapse;
+            border-spacing: 0;
+            empty-cells: show;
+            border: 1px solid #cbcbcb;
+        }
+        thead {
+            background-color: #e0e0e0;
+            color: #000;
+            text-align: left;
+            vertical-align: bottom;
+        }
+        th, td {
+            border-width: 0 0 1px 0;
+            border-bottom: 1px solid #cbcbcb;
+            font-size: inherit;
+            margin: 0;
+            overflow: visible;
+            padding: .5em 1em;
+        }
+        td { background-color: transparent; }
+        caption {
+            color: #000;
+            padding: 1em 0;
+            text-align: center;
+            font: italic 85%/1 arial,sans-serif;
+        }
+        body {
+            margin: 1em;
+            font-family: sans-serif;
+            -webkit-text-size-adjust: 100%;
+            ms-text-size-adjust: 100%;
+        }
+        a { background-color: transparent }
+        h1 { font-size:2em; margin:.67em 0; }
+        tbody > tr:hover, tfoot > tr:hover { background-color: #f2f2f2; }
+        tfoot { font-weight: 700; }
+        .neg { font-weight: 700; color: red; }
+    </style>
 </head>
-<body>";
+<body>
+Amazon Web Services report for $current_day<br>
+" . ($is_first_day ? "It's the first of the month, so all tallies are reset!<br>" : "") . "
+" . ($missing ? "Couldn't find historical data for some accounts. Affected diffs are marked as N/A.<br>" : "") . "
+" . ($exists ? "There was a problem storing historical data for some accounts. Data may be stale.<br>" : "") . "
 
-if ($day eq "01") {
-	print MAILSEND "Amazon Web Services Report for $first_day\n";
-	print MAILSEND "Being the first of the month, all tallies are reset\!\n\n";
-} else {
-	print MAILSEND "Amazon Web Services Report from $first_day - $current_day\n\n";
-}
-
-print MAILSEND "<h2>Totals by account</h2>
+<h2>Totals by account</h2>
 <table>
-	<thead>
-		<tr>
-			<th>Account</th>
-			<th>This month</th>
-			<th>Yesterday</th>
-		</tr>
-	</thead>
-	<tbody>";
-foreach my $account (sort keys %totals) {
-	printf MAILSEND ("\
-		<tr>
-			<td><a href=\"#$account\">$account</a></td>
-			<td>\$%s</td>
-			<td>$account_diff{$account}</td>
-		</tr>", sprintf("%.2f", $totals{$account}));
+    <thead>
+        <tr>
+            <th>Account</th>
+            <th>This month</th>
+            <th>Yesterday</th>
+        </tr>
+    </thead>
+    <tbody>";
+my $all_accounts_total = 0;
+my $all_accounts_total_yesterday = 0;
+foreach my $account_id (sort keys %service_by_account) {
+    my $account_total = sum values %{$service_by_account{$account_id}};
+    my $account_total_yesterday = sum_undef(values %{$service_by_account_yesterday{$account_id}});
+    $all_accounts_total += $account_total;
+    $all_accounts_total_yesterday += $account_total_yesterday;
+    my $account_name = $config->{aws}{accounts}{$account_id};
+    if (!defined $account_name) {
+        $account_name = "(unconfigured account)";
+    }
+    print $MAIL "\
+        <tr>
+            <td><a href='#$account_name'>$account_name</a></td>
+            <td>" . sprintf("\$%.2f", $account_total) . "</td>
+            <td>" . print_diff($account_total - $account_total_yesterday) . "</td>
+        </tr>";
 }
-$all_total = sprintf("%.2f", $all_total);
-print MAILSEND "\
-	</tbody>
-	<tfoot>
-		<tr>
-			<td>Grand total</td>
-			<td>\$$all_total</td>
-			<td>" . print_diff($yesterday_all_total) . "</td>
-		</tr>
-	</tfoot>
+print $MAIL "\
+    </tbody>
+    <tfoot>
+        <tr>
+            <td>Grand total</td>
+            <td>" . sprintf("\$%.2f", $all_accounts_total) . "</td>
+            <td>" . print_diff($all_accounts_total - $all_accounts_total_yesterday) . "</td>
+        </tr>
+    </tfoot>
 </table>";
 
-while (<MAIL>) {
-	print MAILSEND "$_";
+foreach my $account_id (sort keys %service_by_account) {
+    my $account_name = $config->{aws}{accounts}{$account_id};
+    next if !defined $account_name;
+    # To get anchor links to function properly in Gmail, we need to use
+    # a[href][name] syntax. For the record, this is:
+    #   1. Not compliant with the HTML5 standard, which does not specify a
+    #      `name` attribute for <a>
+    #   2. Not compliant with any HTML standard, as "XML empty element syntax
+    #      isn't supported in any flavor of HTML served as text/html"
+    #   3. Is explicitly recommended against in Google's own semantic markup
+    #      guidelines.
+    #   4. Not documented anywhere in Google's reference for HTML content in
+    #      emails.
+    print $MAIL "<a name='$account_name' id='$account_name'></a>";
+    print $MAIL "<h2>Report for account $account_name</h2>";
+
+    my $ec2_total = $service_by_account{$account_id}{"Amazon Elastic Compute Cloud"};
+    my $ec2_total_yesterday = $service_by_account_yesterday{$account_id}{"Amazon Elastic Compute Cloud"};
+    if (defined $ec2_total) {
+        my $ec2_diff = $ec2_total - $ec2_total_yesterday;
+        print $MAIL "\
+        <table>
+            <caption>EC2 Breakdown by Owner</caption>
+            <thead>
+                <tr>
+                    <th>Owner</th>
+                    <th>This month</th>
+                </tr>
+            </thead>
+            <tbody>";
+        foreach my $owner (sort keys %{$ec2_owner_by_account{$account_id}}) {
+            my $amount = sprintf("\$%.2f", $ec2_owner_by_account{$account_id}{$owner});
+            print $MAIL "<tr><td>$owner</td><td>$amount</td></tr>\n";
+        }
+        print $MAIL "\
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td>Grand total</td>
+                    <td>\$" . sprintf("%.2f", $ec2_total) . "
+                    <br>(" . print_diff($ec2_diff) . ")</td>
+                </tr>
+            </tfoot>
+        </table>
+        <br>";
+    }
+    print $MAIL "\
+    <table>
+        <thead>
+            <tr>
+                <th>Service</th>
+                <th>This month</th>
+                <th>Yesterday</th>
+            </tr>
+        </thead>
+        <tbody>";
+
+    service: foreach my $service (sort keys %{$service_by_account{$account_id}}) {
+        my $cost_today = $service_by_account{$account_id}{$service};
+        my $cost_yesterday = $service_by_account_yesterday{$account_id}{$service};
+        my $diff = defined $cost_yesterday ? $cost_today - $cost_yesterday : "";
+        next service if ($cost_today < 0.01);
+        print $MAIL "
+            <tr>
+                <td>$service</td>
+                <td>" . sprintf("\$%.2f", $cost_today) . "</td>
+                <td>" . print_diff($diff) . "</td>
+            </tr>";
+    }
+    my $account_total = sum values %{$service_by_account{$account_id}};
+    my $account_total_yesterday = sum_undef(values %{$service_by_account_yesterday{$account_id}});
+    my $diff = $account_total - $account_total_yesterday;
+    print $MAIL "
+        </tbody>
+        <tfoot>
+            <tr>
+                <td>Grand total</td>
+                <td>" . sprintf("\$%.2f", $account_total) . "</td>
+                <td>" . print_diff($diff) . "</td>
+            </tr>
+        </tfoot>
+    </table>";
 }
 
-# START PROJECT BASED COST ACCOUNTING (for "Name" tags)
-
-open($data_detailed, '<', $local_detailed_file_unzipped) or die "Could not open '$local_detailed_file_unzipped' $!\n";
-
-while (my $line_detailed = <$data_detailed>) {
-
-	if ($csv->parse($line_detailed)) {
-		my @fields = $csv->fields();
-
-		# Exclude the first couple and the last couple lines of the file
-
-		if (($fields[0] =~ /see your/) || ($fields[0] =~ /InvoiceID/) || ($fields[0] eq "")) {
-			next;
-		}
-
-		# Exclude the Invoice Cost Summary
-
-		if ($fields[19] =~ /Total amount for invoice Estimated/) {
-			next;
-		}
-
-		# Exclude line items with no or very minimal cost
-
-		if ($fields[20] < 0.001) {
-			 next;
-		}
-
-		if ($fields[23]) {
-
-			if ($project_spending{"$fields[23]"}) {
-				$project_spending{$fields[23]} += $fields[20];
-			} else {
-				$project_spending{$fields[23]} = $fields[20];
-			}
-
-		} else {
-			next;
-		}
-
-	}
-}
-
-print MAILSEND '<h2>Project-based accounting based on the "Name" tag</h2>
+print $MAIL '<h2>Project-based accounting based on the "Name" tag</h2>
 <table>
-	<thead>
-		<tr>
-			<th>Tag</th>
-			<th>Amount</th>
-		</tr>
-	</thead>
-	<tbody>';
-keys %project_spending;
-foreach my $k (sort keys %project_spending) {
-	my $v = $project_spending{$k};
-	$v = sprintf("%.2f", $v);
-	# It's important that we add a newline at the end here; Gmail (or maybe
-	# SMTP, it's unclear to me) will automatically split lines that are too
-	# long, and we have a lot of tags. This can cause some tags to be
-	# interpreted as text (i.e. content and not markup) which will bork the
-	# formatting of the table. And that's not good.
-	print MAILSEND "<tr><td>$k</td><td>\$$v</td></tr>\n";
+    <thead>
+        <tr>
+            <th>Tag</th>
+            <th>Amount</th>
+        </tr>
+    </thead>
+    <tbody>';
+foreach my $owner (sort keys %ec2_by_name) {
+    my $amount = sprintf("\$%.2f", $ec2_by_name{$owner});
+    # It's important that we add a newline at the end here; Gmail (or maybe
+    # SMTP, it's unclear to me) will automatically split lines that are too
+    # long, and we have a lot of tags. This can cause some tags to be
+    # interpreted as text (i.e. content and not markup) which will bork the
+    # formatting of the table. And that's not good.
+    print $MAIL "<tr><td>$owner</td><td>$amount</td></tr>\n";
 }
-print MAILSEND "</tbody></table>";
+print $MAIL "
+    </tbody>
+</table>
+</body></html>";
+close $MAIL;
 
-close($data_detailed);
-
-# Close email and send
-print MAILSEND "</body></html>";
-
-close(MAIL);
-close(MAILSEND);
-
-# Clean up temporary files a bit
-
-unlink("$local_detailed_file_unzipped");
-unlink("$tmpfile");
-unlink("/tmp/mailtemp.txt");
-
+system "sendmail -t < $local_email_draft_path";

@@ -1,5 +1,7 @@
-requires 'Text::CSV';
 requires 'Amazon::S3';
 requires 'DBD::mysql';
-requires 'LWP::Protocol::https';
 requires 'DBI';
+requires 'JSON';
+requires 'JSON::XS';
+requires 'Text::CSV';
+requires 'LWP::Protocol::https';
