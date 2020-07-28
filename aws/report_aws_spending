@@ -159,6 +159,7 @@ for my $account_id (keys %service_by_account) {
     }
     my $account_name = $config->{aws}{accounts}{$account_id};
     if (!defined $account_name) {
+        # Arbitrary service entry that will not be displayed so it isn't undef
         $service_by_account_yesterday{$account_id}{"_"} = 0;;
         warn "unknown account $account_id: add it to config.pl, skipping diff";
         next;
@@ -176,6 +177,8 @@ for my $account_id (keys %service_by_account) {
     $stmt->bind_columns(map {\$service_by_account_yesterday{$account_id}{$_}} @SERVICES);
     if ($stmt->rows == 0) {
         $missing = 1;
+        # Arbitrary service entry that will not be displayed so it isn't undef
+        $service_by_account_yesterday{$account_id}{"_"} = 0;
         warn "could not find historical data for account $account_id";
     }
     while ($stmt->fetchrow_arrayref) {}
@@ -196,7 +199,10 @@ for my $account_id (keys %service_by_account) {
         foreach my $service_ (@SERVICES) {
             next outer if $service_ eq $service;
         }
-        $unknown_total += $service_by_account{$account_id}{$service};
+        my $service_amount = $service_by_account{$account_id}{$service};
+        if (defined $service_amount) {
+            $unknown_total += $service_amount;
+        }
     }
     my $stmt = $db->prepare("SELECT report_date FROM \`$account_name\` WHERE report_date = ?");
     $stmt->execute($today_mysqlformat);
@@ -399,8 +405,8 @@ foreach my $account_id (sort keys %service_by_account) {
 
     my $ec2_total = $service_by_account{$account_id}{"Amazon Elastic Compute Cloud"};
     my $ec2_total_yesterday = $service_by_account_yesterday{$account_id}{"Amazon Elastic Compute Cloud"};
+    my $ec2_diff = defined $ec2_total_yesterday ? $ec2_total - $ec2_total_yesterday : "";
     if (defined $ec2_total) {
-        my $ec2_diff = $ec2_total - $ec2_total_yesterday;
         print $MAIL "\
         <table>
             <caption>EC2 Breakdown by Owner</caption>
