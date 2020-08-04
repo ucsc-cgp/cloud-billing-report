@@ -1,7 +1,7 @@
-requires 'Amazon::S3';
-requires 'DBD::mysql';
-requires 'DBI';
-requires 'JSON';
-requires 'JSON::XS';
-requires 'Text::CSV';
-requires 'LWP::Protocol::https';
+requires 'Amazon::S3', '0.45';
+requires 'DBD::mysql', '4.050';
+requires 'DBI', '1.643';
+requires 'JSON', '4.02';
+requires 'JSON::XS', '4.02';
+requires 'Text::CSV', '2.00';
+requires 'LWP::Protocol::https', '6.09';
