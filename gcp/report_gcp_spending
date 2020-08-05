@@ -82,11 +82,9 @@ my $supportCost = 0;
 # Open MAIL temporary file to populate with email data
 open(MAIL, '>', "/tmp/mailtemp.txt");
 
-if ($current_day eq "01") {
-	print MAIL "Google Cloud Platform Report for $first_day\n";
+print MAIL "Google Cloud Platform Report for $current_day\n";
+if ($today eq "01") {
 	print MAIL "Being the first of the month, all tallies are reset\!\n\n";
-} else {
-	print MAIL "Google Cloud Platform Report from $first_day - $current_day\n\n";
 }
 
 # Get all GCP billing CSV files for the month so far
