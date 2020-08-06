@@ -29,9 +29,7 @@ To run this script locally, you'll need a few things:
   this data.
 * GCP keys with access to billing data in GCS. You'll need to install the
   Google Cloud SDK (`brew cask install google-cloud-sdk` or something like
-  that) and then copy the configuration directory to this directory
-  (`cp -R ~/.config/gcloud/ gcloud/`). I haven't found a better way to do this
-  yet.
+  that) and then do `gcloud auth login`.
 * `docker-compose`
 
 Then:

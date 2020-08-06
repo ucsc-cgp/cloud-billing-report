@@ -4,6 +4,7 @@ services:
     build: .
     volumes:
       - '.:/root/gcp-reporting'
+      - '~/.config/gcloud/:/root/.config/gcloud/:ro'
     depends_on:
       - db
   db:

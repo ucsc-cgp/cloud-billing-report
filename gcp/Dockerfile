@@ -13,7 +13,6 @@ RUN chmod +x /wait-for-it.sh
 
 # Install dependencies
 COPY cpanfile /root/gcp-reporting/
-RUN cpan install cpanm
 RUN cpanm --installdeps .
 # gsutil is required to run the script
 RUN curl https://dl.google.com/dl/cloudsdk/release/google-cloud-sdk.tar.gz > /tmp/google-cloud-sdk.tar.gz
@@ -22,7 +21,5 @@ RUN tar -C /root -xvf /tmp/google-cloud-sdk.tar.gz && /root/google-cloud-sdk/ins
 # Install script and config
 COPY config.pl /root/gcp-reporting/
 COPY report_gcp_spending /root/gcp-reporting/
-COPY gcloud/ /root/gcloud/
-ENV CLOUDSDK_CONFIG /root/gcloud
 
 CMD ["/wait-for-it.sh", "db:3306", "-t", "0", "--", "perl", "report_gcp_spending"]
