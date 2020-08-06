@@ -53,16 +53,6 @@ with something like
 
 You can then open the generated report in your browser.
 
-
-### Known bugs
-
-If the report service starts before the database service is finished starting,
-the script will fail and restart until it succeeds. Each restart downloads
-files from GCS, so be cognizant of this and kill it if it isn't working.
-
-This should only be a problem the first time the script is run, or if anonymous
-volumes are manually purged (as with `docker up --renew-anon-volumes`).
-
 ### Without docker-compose
 
 If you're installing without using Docker, you can install dependencies with

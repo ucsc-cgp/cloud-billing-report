@@ -2,7 +2,6 @@ version: '3.8'
 services:
   report:
     build: .
-    restart: on-failure
     volumes:
       - '.:/root/gcp-reporting'
     depends_on:

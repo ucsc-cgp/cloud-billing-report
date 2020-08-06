@@ -5,6 +5,12 @@ RUN mkdir -p /root/gcp-reporting/
 WORKDIR /root/gcp-reporting/
 RUN ln -s /bin/date /usr/bin/date
 
+# Use wait-for-it.sh to delay running the script until MySQL has started and is
+# healthy. Otherwise, the script will fail repeatedly trying to connect to the
+# database then loiter around aimlessly after it runs successfully.
+RUN curl -o /wait-for-it.sh https://raw.githubusercontent.com/vishnubob/wait-for-it/master/wait-for-it.sh
+RUN chmod +x /wait-for-it.sh
+
 # Install dependencies
 COPY cpanfile /root/gcp-reporting/
 RUN cpan install cpanm
@@ -19,4 +25,4 @@ COPY report_gcp_spending /root/gcp-reporting/
 COPY gcloud/ /root/gcloud/
 ENV CLOUDSDK_CONFIG /root/gcloud
 
-CMD ["perl", "report_gcp_spending"]
+CMD ["/wait-for-it.sh", "db:3306", "-t", "0", "--", "perl", "report_gcp_spending"]
