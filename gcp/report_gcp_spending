@@ -11,20 +11,14 @@ use DBI;
 
 chdir('/root/gcp-reporting');
 
-# Initialize Sub Account Array
-open(PROJECTS_LIST, '<', 'projects') or die $!;
-chomp(my @projects = <PROJECTS_LIST>);
-close(PROJECTS_LIST);
-#
-# Initialize database connection stuff
-my $host = "db";
-my $database = "gcp_reporting";
-my $mysqluser = "root";
-my $pw = 'hunter2';
+# Load configuration
+my $config = do "./config.pl";
+die "Error parsing config file: $@" if $@;
+die "Error reading config file: $!" unless defined $config;
 
 # Initialize database connection
-
-my $connect = DBI->connect("DBI:mysql:database=$database;host=$host", "$mysqluser", "$pw", {'RaiseError' => 1});
+my $connect = DBI->connect("DBI:mysql:database=$config->{db}{database};host=$config->{db}{host}",
+                      $config->{db}{user}, $config->{db}{pass}, {RaiseError => 1});
 
 my $csv = Text::CSV->new({ sep_char => ',' });
 
@@ -43,7 +37,7 @@ chomp(my $yesterday_mysqlformat = `/usr/bin/date +\"%Y-\%m-\%d\" --date=\"-1 day
 
 # Bucket name with billing data in it
 
-my $bucket = 'ucsc-billing';
+my $bucket = $config->{gcp}{bucket};
 my $total_cost = 0;
 my $project;
 
@@ -66,7 +60,7 @@ my %total_diff;
 
 # Initialize cost differential hashes to zero
 
-foreach $project (@projects) {
+foreach $project (@{$config->{gcp}{projects}}) {
 	$computeEngine_diff{$project} = 0.00;
 	$cloudStorage_diff{$project} = 0.00;
 	$logging_diff{$project} = 0.00;
@@ -133,7 +127,7 @@ sub grab_csv_data {
 	while (my $href = $csv->getline_hr ($data)) {
 		my $lineitem = $href->{'Line Item'};
 		my @service = split('/', $lineitem);
-		foreach my $project (@projects) {
+		foreach my $project (@{$config->{gcp}{projects}}) {
 			if ($href->{'Project Name'} eq "$project") {
 
 				if ($service[2] eq "compute-engine") {
@@ -205,7 +199,7 @@ sub print_diff {
 }
 
 # Set cost tallies to zero if none were incurred.
-foreach my $project (@projects) {
+foreach my $project (@{$config->{gcp}{projects}}) {
 	if (!($computeEngine{$project})) {
 		$computeEngine{$project} = "0.00";
 	}
@@ -229,7 +223,7 @@ foreach my $project (@projects) {
 
 # Normalize numbers to two decimal places
 
-foreach my $project (@projects) {
+foreach my $project (@{$config->{gcp}{projects}}) {
 	$computeEngine{$project} = sprintf("%.2f", $computeEngine{$project});
 	$cloudStorage{$project} = sprintf("%.2f", $cloudStorage{$project});
 	$logging{$project} = sprintf("%.2f", $logging{$project});
@@ -240,20 +234,20 @@ $supportCost = sprintf("%.2f", $supportCost);
 
 # Compute total costs per project
 
-foreach $project (@projects) {
+foreach $project (@{$config->{gcp}{projects}}) {
 	$total{$project} = $computeEngine{$project} + $cloudStorage{$project} + $logging{$project} + $cloudfunctions{$project} + $pubsub{$project};
 }
 
 # Compute grand total
 
 my $grand_total = 0.00;
-foreach $project (@projects) {
+foreach $project (@{$config->{gcp}{projects}}) {
 	$grand_total = $grand_total + $total{$project};
 }
 
 # Get cost differentials from yesterday until today
 
-foreach $project (@projects) {
+foreach $project (@{$config->{gcp}{projects}}) {
 	my $grab = $connect->prepare("SELECT * FROM \`$project\` WHERE report_date = \"$yesterday_mysqlformat\"");
 	$grab->execute() or print "\nCouldn't execute statement: " . $grab->errstr . "\n";
 
@@ -331,7 +325,7 @@ print MAIL "<!doctype html>
 	</thead>
 	<tbody>";
 
-foreach $project (@projects) {
+foreach $project (@{$config->{gcp}{projects}}) {
 	print MAIL "
 		<tr>
 			<td><a href=\"#$project\">$project</a></td>
@@ -355,7 +349,7 @@ print MAIL "
 	</tfoot>
 </table>";
 
-foreach my $project (@projects) {
+foreach my $project (@{$config->{gcp}{projects}}) {
 	my $proj_total = $computeEngine{"$project"} + $cloudStorage{"$project"} + $logging{"$project"} + $cloudfunctions{"$project"} + $pubsub{"$project"};
 	print MAIL "<a name=\"$project\" id=\"$project\"></a><h2>Report for account $project</h2>";
 	print MAIL "<table>
@@ -406,13 +400,6 @@ print MAIL "</body></html>";
 
 close(MAIL);
 
-# Build recipients list
-open(RECIPIENTS_LIST, '<', 'recipients') or die $!;
-chomp(my @recipients = <RECIPIENTS_LIST>);
-close(RECIPIENTS_LIST);
-my $to = join(',', @recipients);
-
-my $from = 'root@fire-01.gi.ucsc.edu';
 my $subject = "GCP Report for $current_day";
 
 open(MAIL, '<', "/tmp/mailtemp.txt");
@@ -420,13 +407,13 @@ open(MAILSEND, "|/usr/sbin/sendmail -t");
 
 print MAILSEND "Mime-Version: 1.0\n";
 print MAILSEND "Content-Type: text/html; charset='UTF-8'\n";
-print MAILSEND "To: $to\n";
-print MAILSEND "From: $from\n";
+print MAILSEND "To: " . join(',', @{$config->{report}{recipients}}) . "\n";
+print MAILSEND "From: $config->{report}{from}\n";
 print MAILSEND "Subject: $subject\n\n";
 
 # Populate the gcp_reporting database with today's dollar amounts
 
-foreach my $project (@projects) {
+foreach my $project (@{$config->{gcp}{projects}}) {
 
 	my $sum;
 

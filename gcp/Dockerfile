@@ -14,8 +14,7 @@ RUN curl https://dl.google.com/dl/cloudsdk/release/google-cloud-sdk.tar.gz > /tm
 RUN tar -C /root -xvf /tmp/google-cloud-sdk.tar.gz && /root/google-cloud-sdk/install.sh --quiet
 
 # Install script and config
-COPY projects /root/gcp-reporting/
-COPY recipients /root/gcp-reporting/
+COPY config.pl /root/gcp-reporting/
 COPY report_gcp_spending /root/gcp-reporting/
 COPY gcloud/ /root/gcloud/
 ENV CLOUDSDK_CONFIG /root/gcloud

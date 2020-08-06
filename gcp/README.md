@@ -15,23 +15,8 @@ and run the script with
 
 ## Configuration
 
-Specify the people who should receive the report in `recipients`. You can refer
-to `recipients.example` to see how the file should look like - each recipient
-should be separated in the file by a newline.
-
-Specify the projects to check in `projects`. Similar to `recipients`, you can
-references `projects.example` to see what the file should look like. Each
-account should be specified on its own line.
-
-Both the `recipients` and `projects` file should be placed in
-`/root/gcp-reporting/`.
-
-The following need to be configured directly in the script:
-* AWS access keys (`$access_key`, `$secret_key`)
-* Billing data bucket name (`$bucket`)
-* MySQL account credentials and connection info (`$host`, `$pw`, `$mysqluser`,
-  `$database`)
-* The `from` email address (`$from`)
+Copy `config.pl.example` to `config.pl`. The fields are more or less
+self-explanatory.
 
 
 ## Development
@@ -48,13 +33,6 @@ To run this script locally, you'll need a few things:
   (`cp -R ~/.config/gcloud/ gcloud/`). I haven't found a better way to do this
   yet.
 * `docker-compose`
-
-MySQL connection details need to be configured in `report_aws_spending`
-manually:
-* Change the hostname to `db`
-* Change the username to `root`
-* Change the password to `hunter2`, or whatever is specified in
-  `docker-compose.yml`
 
 Then:
 

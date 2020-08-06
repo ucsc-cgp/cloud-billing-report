@@ -1,4 +1,3 @@
-projects
-recipients
 db/
 billing-report--*.csv
+config.pl

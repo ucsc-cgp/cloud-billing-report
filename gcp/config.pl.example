@@ -1,0 +1,23 @@
+# Use Perl syntax!
+{
+    gcp => {
+        bucket => 'bucket-name',
+        projects => [
+            'project-name-1',
+            'project-name-2',
+        ]
+    },
+    db => {
+        host => 'db',
+        database => 'gcp_reporting',
+        user => 'root',
+        pass => 'hunter2'
+    },
+    report => {
+        from => 'joe@example.com',
+        recipients => [
+            'recipient@example.com',
+            'joe2@example.com',
+        ]
+    }
+}
