@@ -22,4 +22,5 @@ RUN tar -C /root -xvf /tmp/google-cloud-sdk.tar.gz && /root/google-cloud-sdk/ins
 COPY config.pl /root/gcp-reporting/
 COPY report_gcp_spending /root/gcp-reporting/
 
+ENV REPORT_DEBUG True
 CMD ["/wait-for-it.sh", "db:3306", "-t", "0", "--", "perl", "report_gcp_spending"]

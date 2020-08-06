@@ -403,7 +403,11 @@ close(MAIL);
 my $subject = "GCP Report for $current_day";
 
 open(MAIL, '<', "/tmp/mailtemp.txt");
-open(MAILSEND, "|/usr/sbin/sendmail -t");
+if (defined $ENV{REPORT_DEBUG}) {
+    open(MAILSEND, "|tee report.html");
+} else {
+    open(MAILSEND, "|/usr/sbin/sendmail -t");
+}
 
 print MAILSEND "Mime-Version: 1.0\n";
 print MAILSEND "Content-Type: text/html; charset='UTF-8'\n";

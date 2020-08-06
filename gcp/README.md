@@ -34,22 +34,11 @@ To run this script locally, you'll need a few things:
 
 Then:
 
-    $ docker-compose up --abort-on-container-exit
+    $ docker-compose up --abort-on-container-exit --build --renew-anon-volumes
 
-will run the script.
-
-Before running the script, the script should be modified to output the report
-to a file, or something else besides piping it to `sendmail`. The Docker
-container does not have postfix installed, so without this change, the script
-will fail. This can be accomplished by replacing
-
-    open(MAILSEND, "|/usr/sbin/sendmail -t");
-
-with something like
-
-    open(MAILSEND, "| tee report.html");
-
-You can then open the generated report in your browser.
+will run the script. When run in this fashion, it will write the generated
+report to `report.html` instead of sending it to recipients. (You can control
+this by setting the `REPORT_DEBUG` environment variable.)
 
 ### Without docker-compose
 
