@@ -5,8 +5,9 @@ services:
     environment:
       TZ: 'America/Los_Angeles'
     volumes:
-      - '.:/root/gcp-reporting'
       - '~/.config/gcloud/:/root/.config/gcloud/:ro'
+      - './cache/:/root/gcp-reporting/cache/'
+      - './report.html:/root/gcp-reporting/report.html'
     depends_on:
       - db
   db:

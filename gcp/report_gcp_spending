@@ -85,33 +85,20 @@ if ($today eq "01") {
 # GCP only shows charges for a single day in each CSV file,
 # so we need to get them all for this month before tallying stats
 
-if ($today == "1" && $month ne "01") {
-	foreach my $days (1..$yesterday) {
-		my $padded_day = sprintf("%02d", $days);
-		unless (-e "/root/gcp-reporting/billing-report--$year-$last_month-$padded_day.csv") {
-			print "Getting new file billing-report--$year-$last_month-$padded_day.csv\n";
-			`/root/google-cloud-sdk/bin/gsutil cp gs://$bucket/billing-report--$year-$last_month-$padded_day.csv /root/gcp-reporting/`;
-		}
-		grab_csv_data("billing-report--$year-$last_month-$padded_day.csv");
-	}
-} elsif ($today == "1" && $month == "01") {
-	foreach my $days (1..$yesterday) {
-		my $padded_day = sprintf("%02d", $days);
-		unless (-e "/root/gcp-reporting/billing-report--$last_year-$last_month-$padded_day.csv") {
-			print "Getting new file billing-report--$last_year-$last_month-$padded_day.csv\n";
-			`/root/google-cloud-sdk/bin/gsutil cp gs://$bucket/billing-report--$last_year-$last_month-$padded_day.csv /root/gcp-reporting/`;
-		}
-		grab_csv_data("billing-report--$last_year-$last_month-$padded_day.csv");
-	}
-} elsif ($today > '1') {
-	foreach my $days (1..$yesterday) {
-		my $padded_day = sprintf("%02d", $days);
-		unless (-e "/root/gcp-reporting/billing-report--$year-$month-$padded_day.csv") {
-			print "Getting new file billing-report--$year-$month-$padded_day.csv\n";
-			`/root/google-cloud-sdk/bin/gsutil cp gs://$bucket/billing-report--$year-$month-$padded_day.csv /root/gcp-reporting/`;
-		}
-		grab_csv_data("billing-report--$year-$month-$padded_day.csv");
-	}
+# Date          file_year   file_month
+# 1 Jan 2020    2019        12
+# 2 Jan 2020    2020        1
+# 1 Feb 2020    2020        1
+my $file_year = $today == 1 && $month eq "01" ? $last_year : $year;
+my $file_month = $today > 1 ? $month : $last_month;
+foreach my $days (1..$yesterday) {
+    my $padded_day = sprintf("%02d", $days);
+    my $fname = "billing-report--$file_year-$file_month-$padded_day.csv";
+    unless (-e "/root/gcp-reporting/cache/$fname") {
+        print "Getting new file $fname\n";
+        `/root/google-cloud-sdk/bin/gsutil cp gs://$bucket/$fname /root/gcp-reporting/cache/`;
+    }
+    grab_csv_data($fname);
 }
 
 
@@ -119,7 +106,8 @@ if ($today == "1" && $month ne "01") {
 
 sub grab_csv_data {
 
-	my $workingFile = "/root/gcp-reporting/$_[0]";
+    `mkdir -p /root/gcp-reporting/cache/`
+	my $workingFile = "/root/gcp-reporting/cache/$_[0]";
 
 	open(my $data, '<', $workingFile) or die "Could not open '$workingFile' $!\n";
 
