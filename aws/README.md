@@ -28,14 +28,14 @@ Copy the file [config.pl.example](config.pl.example) to
 To run this script locally, you'll need a few things:
 * A `mysqldump` of the database that stores historical spend information (that
   this script accesses). If you don't have this, it may be sufficient to create
-  a table for each account in `accounts.csv`. Store this file in a subdirectory
+  a table for each account in `config.pl`. Store this file in a subdirectory
   named `db/`; `docker-compose` will automatically populate the database with
   this data.
 * `docker-compose`
 
 Then:
 
-    $ docker-compose up --build --abort-on-container-exit --renew-anon-volumes
+    $ docker-compose up --build --abort-on-container-exit
 
 will deposit `report.html` in `aws/`, where you can open it in your browser or
 send it with `sendmail` or something like that.

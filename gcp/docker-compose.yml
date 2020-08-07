@@ -17,8 +17,11 @@ services:
       - '3306'
     volumes:
       - './db/:/docker-entrypoint-initdb.d/'
+      - 'gcp_reporting_data:/var/lib/mysql'
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: 'hunter2'
       MYSQL_DATABASE: 'gcp_reporting'
       TZ: 'America/Los_Angeles'
+volumes:
+  gcp_reporting_data:

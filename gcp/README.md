@@ -34,7 +34,7 @@ To run this script locally, you'll need a few things:
 
 Then:
 
-    $ docker-compose up --abort-on-container-exit --build --renew-anon-volumes
+    $ docker-compose up --abort-on-container-exit --build
 
 will run the script. When run in this fashion, it will write the generated
 report to `report.html` instead of sending it to recipients. (You can control

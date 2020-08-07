@@ -15,7 +15,10 @@ services:
       - '3306'
     volumes:
       - './db/:/docker-entrypoint-initdb.d/:ro'
+      - 'aws_reporting_data:/var/lib/mysql'
     environment:
       TZ: "America/Los_Angeles"
       MYSQL_ROOT_PASSWORD: 'hunter2'
       MYSQL_DATABASE: 'aws_reporting'
+volumes:
+  aws_reporting_data:
