@@ -10,4 +10,5 @@ COPY cpanfile /root/aws-reporting/
 RUN cpanm --installdeps .
 COPY report_aws_spending /root/aws-reporting/
 COPY config.pl /root/aws-reporting/
+ENV REPORT_DEBUG True
 CMD ["/wait-for-it.sh", "db:3306", "-t", "0", "--", "perl", "report_aws_spending"]

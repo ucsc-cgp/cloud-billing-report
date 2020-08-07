@@ -37,25 +37,8 @@ Then:
 
     $ docker-compose up --build --abort-on-container-exit --renew-anon-volumes
 
-will run the script. `--renew-anon-volumes` will wipe the the MySQL database
-each time we run the script (which is necessary because the script currently
-chokes if it's run more than once per day) and `--abort-on-container-exit` will
-spin everything down once the script is done running. It will take about five
-minutes to run once the database service has spun up entirely. Maybe a little
-longer than that.
-
-Before running the script, the script should be modified to output the report
-to a file, or something else besides piping it to `sendmail`. The Docker
-container does not have postfix installed, so without this change, the script
-will fail. This can be accomplished by replacing
-
-    open(MAILSEND, "|/usr/sbin/sendmail -t");
-
-with something like
-
-    open(MAILSEND, "| tee report.html");
-
-You can then open the generated report in your browser.
+will deposit `report.html` in `aws/`, where you can open it in your browser or
+send it with `sendmail` or something like that.
 
 ### Known issues
 

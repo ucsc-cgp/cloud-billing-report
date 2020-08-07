@@ -495,4 +495,8 @@ print $MAIL "
 </body></html>";
 close $MAIL;
 
-system "sendmail -t < $local_email_draft_path";
+if (defined $ENV{"REPORT_DEBUG"}) {
+    system "cp $local_email_draft_path report.html";
+} else {
+    system "sendmail -t < $local_email_draft_path";
+}
