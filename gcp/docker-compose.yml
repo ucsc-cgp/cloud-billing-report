@@ -2,6 +2,8 @@ version: '3.8'
 services:
   report:
     build: .
+    environment:
+      TZ: 'America/Los_Angeles'
     volumes:
       - '.:/root/gcp-reporting'
       - '~/.config/gcloud/:/root/.config/gcloud/:ro'
@@ -18,3 +20,4 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: 'hunter2'
       MYSQL_DATABASE: 'gcp_reporting'
+      TZ: 'America/Los_Angeles'
