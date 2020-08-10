@@ -194,7 +194,7 @@ for my $account_id (keys %service_by_account) {
         next;
     }
     my $unknown_total = 0;
-    outer: foreach my $service (keys %{$service_by_account_yesterday{$account_id}}) {
+    outer: foreach my $service (keys %{$service_by_account{$account_id}}) {
         # Sum services not tracked in database into "Unknown Services"
         foreach my $service_ (@SERVICES) {
             next outer if $service_ eq $service;
