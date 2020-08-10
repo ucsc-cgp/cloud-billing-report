@@ -8,6 +8,7 @@ use warnings;
 
 use Text::CSV;
 use DBI;
+use File::Spec::Functions 'catfile';
 
 chdir('/root/gcp-reporting');
 
@@ -39,7 +40,6 @@ chomp(my $yesterday_mysqlformat = `/usr/bin/date +\"%Y-\%m-\%d\" --date=\"-1 day
 
 my $bucket = $config->{gcp}{bucket};
 my $total_cost = 0;
-my $project;
 
 # Initialize Service Cost Hashes and Cost Differential hashes
 
@@ -60,7 +60,7 @@ my %total_diff;
 
 # Initialize cost differential hashes to zero
 
-foreach $project (@{$config->{gcp}{projects}}) {
+foreach my $project (@{$config->{gcp}{projects}}) {
 	$computeEngine_diff{$project} = 0.00;
 	$cloudStorage_diff{$project} = 0.00;
 	$logging_diff{$project} = 0.00;
@@ -78,7 +78,7 @@ open(MAIL, '>', "/tmp/mailtemp.txt");
 
 print MAIL "Google Cloud Platform Report for $current_day\n";
 if ($today eq "01") {
-	print MAIL "Being the first of the month, all tallies are reset\!\n\n";
+	print MAIL "Yesterday was the first day of the billing period, so all tallies are reset\!\n\n";
 }
 
 # Get all GCP billing CSV files for the month so far
@@ -93,21 +93,20 @@ my $file_year = $today == 1 && $month eq "01" ? $last_year : $year;
 my $file_month = $today > 1 ? $month : $last_month;
 foreach my $days (1..$yesterday) {
     my $padded_day = sprintf("%02d", $days);
-    my $fname = "billing-report--$file_year-$file_month-$padded_day.csv";
-    unless (-e "/root/gcp-reporting/cache/$fname") {
-        print "Getting new file $fname\n";
-        `/root/google-cloud-sdk/bin/gsutil cp gs://$bucket/$fname /root/gcp-reporting/cache/`;
-    }
-    grab_csv_data($fname);
+    grab_csv_data("billing-report--$file_year-$file_month-$padded_day.csv");
 }
 
 
 # Open the CSV file and iterate through each line to grab all the data
-
 sub grab_csv_data {
-
-    `mkdir -p /root/gcp-reporting/cache/`
-	my $workingFile = "/root/gcp-reporting/cache/$_[0]";
+    my $cache_dir = "/root/gcp-reporting/cache/";
+    `mkdir -p $cache_dir`;
+    my $fname = $_[0];
+    my $workingFile = catfile($cache_dir, $fname);
+    unless (-e $workingFile) {
+        print "Getting new file $fname\n";
+        `/root/google-cloud-sdk/bin/gsutil cp gs://$bucket/$fname $cache_dir`;
+    }
 
 	open(my $data, '<', $workingFile) or die "Could not open '$workingFile' $!\n";
 
@@ -226,36 +225,52 @@ $supportCost = sprintf("%.2f", $supportCost);
 
 # Compute total costs per project
 
-foreach $project (@{$config->{gcp}{projects}}) {
+foreach my $project (@{$config->{gcp}{projects}}) {
 	$total{$project} = $computeEngine{$project} + $cloudStorage{$project} + $logging{$project} + $cloudfunctions{$project} + $pubsub{$project};
 }
 
 # Compute grand total
 
 my $grand_total = 0.00;
-foreach $project (@{$config->{gcp}{projects}}) {
+foreach my $project (@{$config->{gcp}{projects}}) {
 	$grand_total = $grand_total + $total{$project};
 }
 
 # Get cost differentials from yesterday until today
 
-foreach $project (@{$config->{gcp}{projects}}) {
-	my $grab = $connect->prepare("SELECT * FROM \`$project\` WHERE report_date = \"$yesterday_mysqlformat\"");
-	$grab->execute() or print "\nCouldn't execute statement: " . $grab->errstr . "\n";
+# Report generation lags by one day. (For example, the report for August 8 will
+# become available on August 9.) So on the second of the month, we generate the
+# email report for the first day of the month. And on the first day of the
+# month it is also the first day of the billing period, which means that the
+# Yesterday value shold be equal to the Month value
 
-	if ($grab->rows > 0) {
-		while (my @data = $grab->fetchrow_array()) {
-			$computeEngine_diff{$project} = ($computeEngine{$project} - $data[1]);
-			$pubsub_diff{$project} = ($pubsub{"$project"} - $data[2]);
-			$cloudfunctions_diff{$project} = ($cloudfunctions{$project} - $data[3]);
-			$logging_diff{$project} = ($logging{$project} - $data[4]);
-			$cloudStorage_diff{$project} = ($cloudStorage{$project} - $data[5]);
-			$total_diff{$project} = ($total{$project} - $data[6]);
-			$yesterday_total += $total_diff{$project};
-        	}
-	} else {
-		$total_diff{$project} = "";  # N/A
-	}
+foreach my $project (@{$config->{gcp}{projects}}) {
+    if ($today != 2) {
+        my $grab = $connect->prepare("SELECT * FROM \`$project\` WHERE report_date = \"$yesterday_mysqlformat\"");
+        $grab->execute() or print "\nCouldn't execute statement: " . $grab->errstr . "\n";
+
+        if ($grab->rows > 0) {
+            while (my @data = $grab->fetchrow_array()) {
+                $computeEngine_diff{$project} = ($computeEngine{$project} - $data[1]);
+                $pubsub_diff{$project} = ($pubsub{"$project"} - $data[2]);
+                $cloudfunctions_diff{$project} = ($cloudfunctions{$project} - $data[3]);
+                $logging_diff{$project} = ($logging{$project} - $data[4]);
+                $cloudStorage_diff{$project} = ($cloudStorage{$project} - $data[5]);
+                $total_diff{$project} = ($total{$project} - $data[6]);
+                $yesterday_total += $total_diff{$project};
+                }
+        } else {
+            $total_diff{$project} = "";  # N/A
+        }
+    } else {
+        $computeEngine_diff{$project} = $computeEngine{$project};
+        $pubsub_diff{$project} = $pubsub{$project};
+        $cloudfunctions_diff{$project} = $cloudfunctions{$project};
+        $logging_diff{$project} = $logging{$project};
+        $cloudStorage_diff{$project} = $cloudStorage{$project};
+        $total_diff{$project} = $total{$project};
+        $yesterday_total += $total_diff{$project};
+    }
 }
 
 print MAIL "<!doctype html>
@@ -317,7 +332,7 @@ print MAIL "<!doctype html>
 	</thead>
 	<tbody>";
 
-foreach $project (@{$config->{gcp}{projects}}) {
+foreach my $project (@{$config->{gcp}{projects}}) {
 	print MAIL "
 		<tr>
 			<td><a href=\"#$project\">$project</a></td>
