@@ -498,5 +498,5 @@ close $MAIL;
 if (defined $ENV{"REPORT_DEBUG"}) {
     system "cp $local_email_draft_path report.html";
 } else {
-    system "sendmail -t < $local_email_draft_path";
+    system "/usr/sbin/sendmail -t < $local_email_draft_path";
 }
