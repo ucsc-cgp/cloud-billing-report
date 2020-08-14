@@ -456,6 +456,13 @@ foreach my $account_id (sort keys %service_by_account) {
                 <td>" . print_diff($diff) . "</td>
             </tr>";
     }
+    print $MAIL
+            "<tr>
+                <td>Unknown Services</td>
+                <td></td>
+                <td>" . print_diff($service_by_account_yesterday{$account_id}{"Unknown Services"}) . "</td>
+            </tr>" if print_diff($service_by_account_yesterday{$account_id}{"Unknown Services"});
+
     my $account_total = sum values %{$service_by_account{$account_id}};
     my $account_total_yesterday = sum_undef(values %{$service_by_account_yesterday{$account_id}});
     my $diff = $account_total - $account_total_yesterday;
