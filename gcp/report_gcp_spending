@@ -29,7 +29,6 @@ my $csv = Text::CSV->new( { sep_char => ',' } );
 
 # Initialize date variables
 
-chomp( my $first_day         = `/usr/bin/date +\"\%B 01, \%Y\"` );
 chomp( my $current_day       = `/usr/bin/date +\"\%B \%d, \%Y\"` );
 chomp( my $today             = `/usr/bin/date +\"\%-d\"` );
 chomp( my $yesterday         = `/usr/bin/date +\"\%-d\" --date=\"-1 day\"` );
@@ -79,11 +78,11 @@ foreach my $project ( @{ $config->{gcp}{projects} } ) {
 my $supportCost = 0;
 
 # Open MAIL temporary file to populate with email data
-open( MAIL, '>', "/tmp/mailtemp.txt" );
+open my $MAIL, '>', "/tmp/mailtemp.txt";
 
-print MAIL "Google Cloud Platform Report for $current_day\n";
+print $MAIL "Google Cloud Platform Report for $current_day\n";
 if ( $today eq "01" ) {
-    print MAIL
+    print $MAIL
         "Yesterday was the first day of the billing period, so all tallies are reset\!\n\n";
 }
 
@@ -307,7 +306,7 @@ foreach my $project ( @{ $config->{gcp}{projects} } ) {
     }
 }
 
-print MAIL "<!doctype html>
+print $MAIL "<!doctype html>
 <html lang='en'>
 <head>
 	<meta charset='utf-8'>
@@ -367,14 +366,14 @@ print MAIL "<!doctype html>
 	<tbody>";
 
 foreach my $project ( @{ $config->{gcp}{projects} } ) {
-    print MAIL "
+    print $MAIL "
 		<tr>
 			<td><a href=\"#$project\">$project</a></td>
 			<td>\$" . sprintf( "%.2f", $total{$project} ) . "</td>
 			<td>" . print_diff( $total_diff{$project} ) . "</td>
 		</tr>";
 }
-print MAIL "
+print $MAIL "
 		<tr>
 			<td>(support contract)</td>
 			<td>\$" . sprintf( "%.2f", $supportCost ) . "</td>
@@ -397,9 +396,9 @@ foreach my $project ( @{ $config->{gcp}{projects} } ) {
         + $logging{"$project"}
         + $cloudfunctions{"$project"}
         + $pubsub{"$project"};
-    print MAIL
-        "<a name=\"$project\" id=\"$project\"></a><h2>Report for account $project</h2>";
-    print MAIL "<table>
+    print $MAIL
+        "<a name=\"$project\" id=\"$project\"></a><h2>Report for account $project</h2>
+<table>
 	<thead>
 		<tr>
 			<th>Service</th>
@@ -443,26 +442,22 @@ foreach my $project ( @{ $config->{gcp}{projects} } ) {
 	</tfoot>
 	</table>";
 }
-print MAIL "</body></html>";
+print $MAIL "</body></html>";
 
-close(MAIL);
+close($MAIL);
 
-my $subject = "GCP Report for $current_day";
-
-open( MAIL, '<', "/tmp/mailtemp.txt" );
+open my $MAIL_, '<', "/tmp/mailtemp.txt";
+my $command = "/usr/sbin/sendmail -t";
 if ( defined $ENV{REPORT_DEBUG} ) {
-    open( MAILSEND, "|tee report.html" );
+    $command = "tee report.html";
 }
-else {
-    open( MAILSEND, "|/usr/sbin/sendmail -t" );
-}
+open my $MAILSEND, "|-", $command;
 
-print MAILSEND "Mime-Version: 1.0\n";
-print MAILSEND "Content-Type: text/html; charset='UTF-8'\n";
-print MAILSEND "To: "
-    . join( ',', @{ $config->{report}{recipients} } ) . "\n";
-print MAILSEND "From: $config->{report}{from}\n";
-print MAILSEND "Subject: $subject\n\n";
+print $MAILSEND "Mime-Version: 1.0
+Content-Type: text/html; charset='UTF-8'
+To: " . join( ',', @{ $config->{report}{recipients} } ) . "
+From: $config->{report}{from}
+Subject: GCP Report for $current_day\n\n";
 
 # Populate the gcp_reporting database with today's dollar amounts
 
@@ -497,15 +492,15 @@ foreach my $project ( @{ $config->{gcp}{projects} } ) {
         );
     }
     else {
-#		print MAILSEND "\nSkipping DB entry for $project - today's data already exists.\n";
+#		print $MAILSEND "\nSkipping DB entry for $project - today's data already exists.\n";
     }
 }
 
-while (<MAIL>) {
-    print MAILSEND "$_";
+while (<$MAIL_>) {
+    print $MAILSEND "$_";
 }
 
-close(MAIL);
-close(MAILSEND);
+close($MAIL_);
+close($MAILSEND);
 
 unlink("/tmp/mailtemp.txt");
