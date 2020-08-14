@@ -8,7 +8,7 @@ use Amazon::S3;
 use DBI;
 use File::Spec;
 use File::Temp;
-use IO::Uncompress::Gunzip ('gunzip', '$GunzipError');
+use IO::Uncompress::Gunzip ( 'gunzip', '$GunzipError' );
 use JSON;
 use List::Util 'sum';
 use Text::CSV;
@@ -16,7 +16,7 @@ use Time::Piece;
 use Time::Seconds;
 
 chdir('/root/aws-reporting');
-my $workdir = File::Temp::tempdir(CLEANUP => 1);
+my $workdir = File::Temp::tempdir( CLEANUP => 1 );
 
 # === Load configuration ===
 my $config = do "/root/aws-reporting/config.pl";
@@ -24,23 +24,25 @@ die "Error parsing config file: $@" if $@;
 die "Error reading config file: $!" unless defined $config;
 
 # === Download report manifest and archive ===
-my $this_month = localtime->strftime("%Y%m01");
-my $next_month = (localtime() + ONE_MONTH)->strftime("%Y%m01");
+my $this_month    = localtime->strftime("%Y%m01");
+my $next_month    = ( localtime() + ONE_MONTH )->strftime("%Y%m01");
 my $report_prefix = "$config->{aws}{prefix}/$config->{aws}{report_name}/";
 $report_prefix .= "$this_month-$next_month";
-my $manifest_name = "$config->{aws}{report_name}-Manifest.json";
-my $manifest_path = "$report_prefix/$manifest_name";
-my $local_manifest_path = File::Spec->catfile($workdir, $manifest_name);
-my $s3 = Amazon::S3->new({
-    aws_access_key_id => $config->{aws}{access_key},
-    aws_secret_access_key => $config->{aws}{secret_key},
-    secure => 1,
-    retry => 1,
-});
-my $bucket = $s3->bucket($config->{aws}{bucket});
+my $manifest_name       = "$config->{aws}{report_name}-Manifest.json";
+my $manifest_path       = "$report_prefix/$manifest_name";
+my $local_manifest_path = File::Spec->catfile( $workdir, $manifest_name );
+my $s3                  = Amazon::S3->new(
+    {   aws_access_key_id     => $config->{aws}{access_key},
+        aws_secret_access_key => $config->{aws}{secret_key},
+        secure                => 1,
+        retry                 => 1,
+    }
+);
+my $bucket = $s3->bucket( $config->{aws}{bucket} );
+
 # This file is overwritten by AWS whenever a new report is generated with
 # the path to the latest report.
-$bucket->get_key_filename($manifest_path, undef, $local_manifest_path)
+$bucket->get_key_filename( $manifest_path, undef, $local_manifest_path )
     or die "s3: no such key $manifest_path, stopped";
 my $manifest_data = do {
     local $/ = undef;
@@ -49,19 +51,21 @@ my $manifest_data = do {
     <$manifest_fh>;
 };
 my $manifest = decode_json $manifest_data;
+
 # Reports that are sufficiently large can be split into multiple files.
 # That is not the case for us right now.
-my $archive_path = $manifest->{"reportKeys"}[0];
-my $local_archive_path = File::Spec->catfile($workdir, "report.gz");
-$bucket->get_key_filename($archive_path, undef, $local_archive_path)
+my $archive_path       = $manifest->{"reportKeys"}[0];
+my $local_archive_path = File::Spec->catfile( $workdir, "report.gz" );
+$bucket->get_key_filename( $archive_path, undef, $local_archive_path )
     or die "s3: no such key $local_archive_path, stopped";
-my $local_report_path = File::Spec->catfile($workdir, "report.csv");
+my $local_report_path = File::Spec->catfile( $workdir, "report.csv" );
 gunzip $local_archive_path => $local_report_path
     or die "$local_archive_path: $GunzipError, stopped";
 
 # === Parse CSV ===
 # The report is parsed into three primary structures:
 my %service_by_account;
+
 # my %service_by_account = {
 #     12345678 => {
 #         "AWS Simple Storage Service" => 0.12343,
@@ -69,6 +73,7 @@ my %service_by_account;
 #     }
 # }
 my %ec2_owner_by_account;
+
 # my %ec2_owner_by_account = {
 #     12345678 => {
 #         "owner@example.com" => 5.242,
@@ -76,32 +81,35 @@ my %ec2_owner_by_account;
 #     }
 # }
 my %ec2_by_name;
+
 # my %ec2_by_name = {
 #     "my-name-tag" => 82.666,
 #     "(untagged)" => 393933.21,
 # }
-my $csv = Text::CSV->new({ binary => 1, auto_diag => 1, strict => 1 });
+my $csv = Text::CSV->new( { binary => 1, auto_diag => 1, strict => 1 } );
 open my $report, "<:encoding(utf8)", $local_report_path
     or die "$local_report_path: $!, stopping";
-my @cols = @{$csv->getline ($report)};
-my $row = {};
-$csv->bind_columns (\@{$row}{@cols});
-while ($csv->getline ($report)) {
+my @cols = @{ $csv->getline($report) };
+my $row  = {};
+$csv->bind_columns( \@{$row}{@cols} );
+while ( $csv->getline($report) ) {
     my $account_id = $row->{"lineItem/UsageAccountId"};
-    my $service = $row->{"product/ProductName"};
-    my $amount = $row->{"lineItem/BlendedCost"};
+    my $service    = $row->{"product/ProductName"};
+    my $amount     = $row->{"lineItem/BlendedCost"};
     $service_by_account{$account_id}->{$service} += $amount;
-    if ($service eq "Amazon Elastic Compute Cloud") {
+    if ( $service eq "Amazon Elastic Compute Cloud" ) {
         my $owner = $row->{"resourceTags/user:Owner"};
-        my $name = $row->{"resourceTags/user:Name"};
-        if (!defined $name or $name eq "") {
+        my $name  = $row->{"resourceTags/user:Name"};
+        if ( !defined $name or $name eq "" ) {
             $ec2_by_name{"(untagged)"} += $amount;
-        } else {
+        }
+        else {
             $ec2_by_name{$name} += $amount;
         }
-        if (!defined $owner or $owner eq "") {
+        if ( !defined $owner or $owner eq "" ) {
             $ec2_owner_by_account{$account_id}{"(untagged)"} += $amount;
-        } else {
+        }
+        else {
             $ec2_owner_by_account{$account_id}->{$owner} += $amount;
         }
     }
@@ -109,62 +117,73 @@ while ($csv->getline ($report)) {
 close $report or warn "$local_report_path: $!";
 
 # === Read yesterday's aggregate data from database ===
-my @SERVICES = ('AWS Data Transfer',
-                'Amazon Simple Storage Service',
-                'AWS Support (Developer)',
-                'Amazon Route 53',
-                'Amazon Data Pipeline',  # TODO: may deviate from CUR name
-                'AWS Key Management Service',
-                'Amazon SimpleDB',
-                'Amazon CloudWatch',
-                'AWS CloudTrail',
-                'Amazon Simple Queue Service',
-                'Amazon Simple Notification Service',
-                'AWS Lambda',
-                'Amazon Registrar',
-                'Amazon Elastic Compute Cloud',
-                'Amazon API Gateway',
-                'Amazon DynamoDB',
-                'Amazon Elastic Container Service for Kubernetes',
-                'Amazon Elasticsearch Service',
-                'Amazon Relational Database Service',
-                'AWS Step Functions',
-                'Amazon Virtual Private Cloud',
-                'AWS Secrets Manager',
-                'Amazon CloudFront',
-                'Amazon GuardDuty',
-                'AWS Config',
-                'Amazon Cost Explorer Service',  # TODO: may deviate from CUR name
-                'Amazon Business Support',  # TODO: may deviate from CUR name
-                'Amazon X-Ray Service',  # TODO: may deviate from CUR name
-                'AWS Glue',
-                'Unknown Services');
-my $db = DBI->connect("DBI:mysql:database=$config->{db}{database};host=$config->{db}{host}",
-                      $config->{db}{user}, $config->{db}{pass}, {RaiseError => 1})
-    or die "$DBI::errstr, stopping";
+my @SERVICES = (
+    'AWS Data Transfer',
+    'Amazon Simple Storage Service',
+    'AWS Support (Developer)',
+    'Amazon Route 53',
+    'Amazon Data Pipeline',    # TODO: may deviate from CUR name
+    'AWS Key Management Service',
+    'Amazon SimpleDB',
+    'Amazon CloudWatch',
+    'AWS CloudTrail',
+    'Amazon Simple Queue Service',
+    'Amazon Simple Notification Service',
+    'AWS Lambda',
+    'Amazon Registrar',
+    'Amazon Elastic Compute Cloud',
+    'Amazon API Gateway',
+    'Amazon DynamoDB',
+    'Amazon Elastic Container Service for Kubernetes',
+    'Amazon Elasticsearch Service',
+    'Amazon Relational Database Service',
+    'AWS Step Functions',
+    'Amazon Virtual Private Cloud',
+    'AWS Secrets Manager',
+    'Amazon CloudFront',
+    'Amazon GuardDuty',
+    'AWS Config',
+    'Amazon Cost Explorer Service',    # TODO: may deviate from CUR name
+    'Amazon Business Support',         # TODO: may deviate from CUR name
+    'Amazon X-Ray Service',            # TODO: may deviate from CUR name
+    'AWS Glue',
+    'Unknown Services'
+);
+my $db = DBI->connect(
+    "DBI:mysql:database=$config->{db}{database};host=$config->{db}{host}",
+    $config->{db}{user},
+    $config->{db}{pass},
+    { RaiseError => 1 }
+) or die "$DBI::errstr, stopping";
 my $now = localtime();
-my $yesterday_mysqlformat = ($now - ONE_HOUR*($now->hour + 12))->strftime("%Y-%m-%d");
+my $yesterday_mysqlformat =
+    ( $now - ONE_HOUR * ( $now->hour + 12 ) )->strftime("%Y-%m-%d");
 my $is_first_day = localtime->strftime("%d") eq "01";
-my $missing = 0;
+my $missing      = 0;
 my %service_by_account_yesterday;
+
 # %service_by_account_yesterday has the same form as %service_by_account, but
 # has yesterday's data
-for my $account_id (keys %service_by_account) {
+for my $account_id ( keys %service_by_account ) {
+
     # On the first day of the month, the diff should equal today's total
     if ($is_first_day) {
-        for my $service (keys %{$service_by_account{$account_id}}) {
+        for my $service ( keys %{ $service_by_account{$account_id} } ) {
             $service_by_account_yesterday{$account_id}{$service} = 0;
         }
         next;
     }
     my $account_name = $config->{aws}{accounts}{$account_id};
-    if (!defined $account_name) {
+    if ( !defined $account_name ) {
+
         # Arbitrary service entry that will not be displayed so it isn't undef
-        $service_by_account_yesterday{$account_id}{"_"} = 0;;
-        warn "unknown account $account_id: add it to config.pl, skipping diff";
+        $service_by_account_yesterday{$account_id}{"_"} = 0;
+        warn
+            "unknown account $account_id: add it to config.pl, skipping diff";
         next;
     }
-    my $stmt = $db->prepare("SELECT data_tally, s3_tally, support_dev_tally,
+    my $stmt = $db->prepare(
+        "SELECT data_tally, s3_tally, support_dev_tally,
         route53_tally, datapipeline_tally, awskms_tally, simpledb_tally,
         cloudwatch_tally, cloudtrail_tally, queueservice_tally,
         notification_tally, lambda_tally, registrar_tally, ec2_total,
@@ -172,43 +191,51 @@ for my $account_id (keys %service_by_account) {
         amazones_tally, amazonrds_tally, amazonstates_tally, amazonvpc_tally,
         awssecretsmanager_tally, cloudfront_tally, guardduty_tally,
         awsconfig_tally, costexplorer_tally, support_bus_tally, xray_tally,
-        awsglue_tally, unknown_tally FROM \`$account_name\` WHERE report_date = ?");
+        awsglue_tally, unknown_tally FROM \`$account_name\` WHERE report_date = ?"
+    );
     $stmt->execute($yesterday_mysqlformat);
-    $stmt->bind_columns(map {\$service_by_account_yesterday{$account_id}{$_}} @SERVICES);
-    if ($stmt->rows == 0) {
+    $stmt->bind_columns(
+        map { \$service_by_account_yesterday{$account_id}{$_} } @SERVICES );
+    if ( $stmt->rows == 0 ) {
         $missing = 1;
+
         # Arbitrary service entry that will not be displayed so it isn't undef
         $service_by_account_yesterday{$account_id}{"_"} = 0;
         warn "could not find historical data for account $account_id";
     }
-    while ($stmt->fetchrow_arrayref) {}
+    while ( $stmt->fetchrow_arrayref ) { }
 }
 
 # === Insert new aggregate data into database ===
-my $exists = 0;
+my $exists            = 0;
 my $today_mysqlformat = localtime->strftime("%Y-%m-%d");
-for my $account_id (keys %service_by_account) {
+for my $account_id ( keys %service_by_account ) {
     my $account_name = $config->{aws}{accounts}{$account_id};
-    if (!defined $account_name) {
+    if ( !defined $account_name ) {
         warn "unknown account $account_id: add it to config.pl";
         next;
     }
     my $unknown_total = 0;
-    outer: foreach my $service (keys %{$service_by_account{$account_id}}) {
+outer:
+    foreach my $service ( keys %{ $service_by_account{$account_id} } ) {
+
         # Sum services not tracked in database into "Unknown Services"
         foreach my $service_ (@SERVICES) {
             next outer if $service_ eq $service;
         }
         my $service_amount = $service_by_account{$account_id}{$service};
-        if (defined $service_amount) {
+        if ( defined $service_amount ) {
             $unknown_total += $service_amount;
         }
     }
-    my $stmt = $db->prepare("SELECT report_date FROM \`$account_name\` WHERE report_date = ?");
+    my $stmt = $db->prepare(
+        "SELECT report_date FROM \`$account_name\` WHERE report_date = ?");
     $stmt->execute($today_mysqlformat);
-    if ($stmt->rows == 0) {
+    if ( $stmt->rows == 0 ) {
+
         # Data is not there yet for today, let's put it in there!
-        my $ins = $db->prepare("INSERT INTO \`$account_name\`
+        my $ins = $db->prepare(
+            "INSERT INTO \`$account_name\`
         (report_date, data_tally, s3_tally, support_dev_tally, route53_tally, datapipeline_tally,
         awskms_tally, simpledb_tally, cloudwatch_tally, cloudtrail_tally,
         queueservice_tally, notification_tally, lambda_tally, registrar_tally,
@@ -218,8 +245,10 @@ for my $account_id (keys %service_by_account) {
         awsconfig_tally, costexplorer_tally, support_bus_tally, xray_tally,
         awsglue_tally, unknown_tally, grand_total) VALUES
         (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?)");
-        $ins->execute($today_mysqlformat,
+        ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        $ins->execute(
+            $today_mysqlformat,
             $service_by_account{$account_id}{'AWS Data Transfer'},
             $service_by_account{$account_id}{'Amazon Simple Storage Service'},
             $service_by_account{$account_id}{'AWS Support (Developer)'},
@@ -230,15 +259,18 @@ for my $account_id (keys %service_by_account) {
             $service_by_account{$account_id}{'Amazon CloudWatch'},
             $service_by_account{$account_id}{'AWS CloudTrail'},
             $service_by_account{$account_id}{'Amazon Simple Queue Service'},
-            $service_by_account{$account_id}{'Amazon Simple Notification Service'},
+            $service_by_account{$account_id}
+                {'Amazon Simple Notification Service'},
             $service_by_account{$account_id}{'AWS Lambda'},
             $service_by_account{$account_id}{'Amazon Registrar'},
             $service_by_account{$account_id}{'Amazon Elastic Compute Cloud'},
             $service_by_account{$account_id}{'Amazon API Gateway'},
             $service_by_account{$account_id}{'Amazon DynamoDB'},
-            $service_by_account{$account_id}{'Amazon Elastic Container Service for Kubernetes'},
+            $service_by_account{$account_id}
+                {'Amazon Elastic Container Service for Kubernetes'},
             $service_by_account{$account_id}{'Amazon Elasticsearch Service'},
-            $service_by_account{$account_id}{'Amazon Relational Database Service'},
+            $service_by_account{$account_id}
+                {'Amazon Relational Database Service'},
             $service_by_account{$account_id}{'AWS Step Functions'},
             $service_by_account{$account_id}{'Amazon Virtual Private Cloud'},
             $service_by_account{$account_id}{'AWS Secrets Manager'},
@@ -250,48 +282,57 @@ for my $account_id (keys %service_by_account) {
             $service_by_account{$account_id}{'Amazon X-Ray Service'},
             $service_by_account{$account_id}{'AWS Glue'},
             $unknown_total,
-            sum values %{$service_by_account{$account_id}});
-    } else {
+            sum values %{ $service_by_account{$account_id} }
+        );
+    }
+    else {
         # Data already exists in the database. Uh oh.
         $exists = 1;
     }
 }
 
 sub print_diff {
-    # Some services do not have history stored because of the current db schema
-    # and will be passed to `print_diff` as undef
-    if ($_[0] eq "" or !defined $_[0]) {
+
+   # Some services do not have history stored because of the current db schema
+   # and will be passed to `print_diff` as undef
+    if ( $_[0] eq "" or !defined $_[0] ) {
         return "N/A";
-    # Ignore sufficiently small amounts
-    } elsif ($_[0] > 0.01) {
-        return sprintf("\$%.2f", $_[0]);
-    } elsif ($_[0] < -0.01) {
+
+        # Ignore sufficiently small amounts
+    }
+    elsif ( $_[0] > 0.01 ) {
+        return sprintf( "\$%.2f", $_[0] );
+    }
+    elsif ( $_[0] < -0.01 ) {
+
         # A negative value is unlikely but possible in the event of, for
         # example, a credit from AWS
-        my $absolute = sprintf("-\$%.2f", abs($_[0]));
+        my $absolute = sprintf( "-\$%.2f", abs( $_[0] ) );
         return "<span class='neg'>$absolute</span>";
-    } else {
+    }
+    else {
         return "";
     }
 }
 
 sub sum_undef {
-    return sum(grep(defined, @_));
+    return sum( grep( defined, @_ ) );
 }
 
 # === Generate email ===
 # Write email to disk first so that we don't send out a borked email if this
 # script fails before completion
-my $local_email_draft_path = File::Spec->catfile($workdir, 'mailtmp.txt');
+my $local_email_draft_path = File::Spec->catfile( $workdir, 'mailtmp.txt' );
 open my $MAIL, '>:encoding(utf8)', $local_email_draft_path
     or die "$local_email_draft_path: $!, stopped";
 my $current_day = localtime->strftime("%B %d, %Y");
-my $subject = "AWS Report for $current_day";
+my $subject     = "AWS Report for $current_day";
+
 # Styles are custom and cherry-picked from pure-css 1.0.1
 # For styles to show in gmail, they must be in <head> and not <body>
 print $MAIL "Mime-Version: 1.0
 Content-Type: text/html; charset='UTF-8'
-To: " . join(',', @{$config->{report}{recipients}}) . "
+To: " . join( ',', @{ $config->{report}{recipients} } ) . "
 From: $config->{report}{from}
 Subject: $subject
 
@@ -344,9 +385,27 @@ Subject: $subject
 </head>
 <body>
 Amazon Web Services report for $current_day<br>
-" . ($is_first_day ? "It's the first of the month, so all tallies are reset!<br>" : "") . "
-" . ($missing ? "Couldn't find historical data for some accounts. Affected diffs are marked as N/A.<br>" : "") . "
-" . ($exists ? "There was a problem storing historical data for some accounts. Data may be stale.<br>" : "") . "
+"
+    . (
+    $is_first_day
+    ? "It's the first of the month, so all tallies are reset!<br>"
+    : ""
+    )
+    . "
+"
+    . (
+    $missing
+    ? "Couldn't find historical data for some accounts. Affected diffs are marked as N/A.<br>"
+    : ""
+    )
+    . "
+"
+    . (
+    $exists
+    ? "There was a problem storing historical data for some accounts. Data may be stale.<br>"
+    : ""
+    )
+    . "
 
 <h2>Totals by account</h2>
 <table>
@@ -358,22 +417,25 @@ Amazon Web Services report for $current_day<br>
         </tr>
     </thead>
     <tbody>";
-my $all_accounts_total = 0;
+my $all_accounts_total           = 0;
 my $all_accounts_total_yesterday = 0;
-foreach my $account_id (sort keys %service_by_account) {
-    my $account_total = sum values %{$service_by_account{$account_id}};
-    my $account_total_yesterday = sum_undef(values %{$service_by_account_yesterday{$account_id}});
-    $all_accounts_total += $account_total;
+
+foreach my $account_id ( sort keys %service_by_account ) {
+    my $account_total = sum values %{ $service_by_account{$account_id} };
+    my $account_total_yesterday =
+        sum_undef( values %{ $service_by_account_yesterday{$account_id} } );
+    $all_accounts_total           += $account_total;
     $all_accounts_total_yesterday += $account_total_yesterday;
     my $account_name = $config->{aws}{accounts}{$account_id};
-    if (!defined $account_name) {
+    if ( !defined $account_name ) {
         $account_name = "(unconfigured account)";
     }
     print $MAIL "\
         <tr>
             <td><a href='#$account_name'>$account_name</a></td>
-            <td>" . sprintf("\$%.2f", $account_total) . "</td>
-            <td>" . print_diff($account_total - $account_total_yesterday) . "</td>
+            <td>" . sprintf( "\$%.2f", $account_total ) . "</td>
+            <td>"
+        . print_diff( $account_total - $account_total_yesterday ) . "</td>
         </tr>";
 }
 print $MAIL "\
@@ -381,15 +443,18 @@ print $MAIL "\
     <tfoot>
         <tr>
             <td>Grand total</td>
-            <td>" . sprintf("\$%.2f", $all_accounts_total) . "</td>
-            <td>" . print_diff($all_accounts_total - $all_accounts_total_yesterday) . "</td>
+            <td>" . sprintf( "\$%.2f", $all_accounts_total ) . "</td>
+            <td>"
+    . print_diff( $all_accounts_total - $all_accounts_total_yesterday )
+    . "</td>
         </tr>
     </tfoot>
 </table>";
 
-foreach my $account_id (sort keys %service_by_account) {
+foreach my $account_id ( sort keys %service_by_account ) {
     my $account_name = $config->{aws}{accounts}{$account_id};
     next if !defined $account_name;
+
     # To get anchor links to function properly in Gmail, we need to use
     # a[href][name] syntax. For the record, this is:
     #   1. Not compliant with the HTML5 standard, which does not specify a
@@ -403,10 +468,13 @@ foreach my $account_id (sort keys %service_by_account) {
     print $MAIL "<a name='$account_name' id='$account_name'></a>";
     print $MAIL "<h2>Report for account $account_name</h2>";
 
-    my $ec2_total = $service_by_account{$account_id}{"Amazon Elastic Compute Cloud"};
-    my $ec2_total_yesterday = $service_by_account_yesterday{$account_id}{"Amazon Elastic Compute Cloud"};
-    my $ec2_diff = defined $ec2_total_yesterday ? $ec2_total - $ec2_total_yesterday : "";
-    if (defined $ec2_total) {
+    my $ec2_total =
+        $service_by_account{$account_id}{"Amazon Elastic Compute Cloud"};
+    my $ec2_total_yesterday = $service_by_account_yesterday{$account_id}
+        {"Amazon Elastic Compute Cloud"};
+    my $ec2_diff =
+        defined $ec2_total_yesterday ? $ec2_total - $ec2_total_yesterday : "";
+    if ( defined $ec2_total ) {
         print $MAIL "\
         <table>
             <caption>EC2 Breakdown by Owner</caption>
@@ -417,8 +485,11 @@ foreach my $account_id (sort keys %service_by_account) {
                 </tr>
             </thead>
             <tbody>";
-        foreach my $owner (sort keys %{$ec2_owner_by_account{$account_id}}) {
-            my $amount = sprintf("\$%.2f", $ec2_owner_by_account{$account_id}{$owner});
+        foreach
+            my $owner ( sort keys %{ $ec2_owner_by_account{$account_id} } )
+        {
+            my $amount = sprintf( "\$%.2f",
+                $ec2_owner_by_account{$account_id}{$owner} );
             print $MAIL "<tr><td>$owner</td><td>$amount</td></tr>\n";
         }
         print $MAIL "\
@@ -426,7 +497,7 @@ foreach my $account_id (sort keys %service_by_account) {
             <tfoot>
                 <tr>
                     <td>Grand total</td>
-                    <td>\$" . sprintf("%.2f", $ec2_total) . "
+                    <td>\$" . sprintf( "%.2f", $ec2_total ) . "
                     <br>(" . print_diff($ec2_diff) . ")</td>
                 </tr>
             </tfoot>
@@ -444,34 +515,42 @@ foreach my $account_id (sort keys %service_by_account) {
         </thead>
         <tbody>";
 
-    service: foreach my $service (sort keys %{$service_by_account{$account_id}}) {
+service:
+    foreach my $service ( sort keys %{ $service_by_account{$account_id} } ) {
         my $cost_today = $service_by_account{$account_id}{$service};
-        my $cost_yesterday = $service_by_account_yesterday{$account_id}{$service};
-        my $diff = defined $cost_yesterday ? $cost_today - $cost_yesterday : "";
-        next service if ($cost_today < 0.01);
+        my $cost_yesterday =
+            $service_by_account_yesterday{$account_id}{$service};
+        my $diff =
+            defined $cost_yesterday ? $cost_today - $cost_yesterday : "";
+        next service if ( $cost_today < 0.01 );
         print $MAIL "
             <tr>
                 <td>$service</td>
-                <td>" . sprintf("\$%.2f", $cost_today) . "</td>
+                <td>" . sprintf( "\$%.2f", $cost_today ) . "</td>
                 <td>" . print_diff($diff) . "</td>
             </tr>";
     }
-    print $MAIL
-            "<tr>
+    print $MAIL "<tr>
                 <td>Unknown Services</td>
                 <td></td>
-                <td>" . print_diff($service_by_account_yesterday{$account_id}{"Unknown Services"}) . "</td>
-            </tr>" if print_diff($service_by_account_yesterday{$account_id}{"Unknown Services"});
+                <td>"
+        . print_diff(
+        $service_by_account_yesterday{$account_id}{"Unknown Services"} )
+        . "</td>
+            </tr>"
+        if print_diff(
+        $service_by_account_yesterday{$account_id}{"Unknown Services"} );
 
-    my $account_total = sum values %{$service_by_account{$account_id}};
-    my $account_total_yesterday = sum_undef(values %{$service_by_account_yesterday{$account_id}});
+    my $account_total = sum values %{ $service_by_account{$account_id} };
+    my $account_total_yesterday =
+        sum_undef( values %{ $service_by_account_yesterday{$account_id} } );
     my $diff = $account_total - $account_total_yesterday;
     print $MAIL "
         </tbody>
         <tfoot>
             <tr>
                 <td>Grand total</td>
-                <td>" . sprintf("\$%.2f", $account_total) . "</td>
+                <td>" . sprintf( "\$%.2f", $account_total ) . "</td>
                 <td>" . print_diff($diff) . "</td>
             </tr>
         </tfoot>
@@ -487,8 +566,9 @@ print $MAIL '<h2>Project-based accounting based on the "Name" tag</h2>
         </tr>
     </thead>
     <tbody>';
-foreach my $owner (sort keys %ec2_by_name) {
-    my $amount = sprintf("\$%.2f", $ec2_by_name{$owner});
+foreach my $owner ( sort keys %ec2_by_name ) {
+    my $amount = sprintf( "\$%.2f", $ec2_by_name{$owner} );
+
     # It's important that we add a newline at the end here; Gmail (or maybe
     # SMTP, it's unclear to me) will automatically split lines that are too
     # long, and we have a lot of tags. This can cause some tags to be
@@ -502,8 +582,9 @@ print $MAIL "
 </body></html>";
 close $MAIL;
 
-if (defined $ENV{"REPORT_DEBUG"}) {
+if ( defined $ENV{"REPORT_DEBUG"} ) {
     system "cp $local_email_draft_path report.html";
-} else {
+}
+else {
     system "/usr/sbin/sendmail -t < $local_email_draft_path";
 }
