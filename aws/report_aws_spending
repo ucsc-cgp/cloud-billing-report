@@ -531,8 +531,8 @@ service:
             </tr>";
     }
     print $MAIL "<tr>
-                <td>Unknown Services</td>
-                <td></td>
+            <td>Unknown Services</td>
+                <td>N/A</td>
                 <td>"
         . print_diff(
         $service_by_account_yesterday{$account_id}{"Unknown Services"} )
