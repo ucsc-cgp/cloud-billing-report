@@ -40,6 +40,25 @@ chomp( my $today_mysqlformat = `/usr/bin/date +\"%Y-\%m-\%d\"` );
 chomp( my $yesterday_mysqlformat =
         `/usr/bin/date +\"%Y-\%m-\%d\" --date=\"-1 day\"` );
 
+if ( defined $ENV{REPORT_DATE} ) {
+    chomp( $current_day =
+            `/usr/bin/date -d '$ENV{REPORT_DATE}' +\"\%B \%d, \%Y\"` );
+    chomp( $today = `/usr/bin/date -d '$ENV{REPORT_DATE}' +\"\%-d\"` );
+    chomp( $yesterday =
+            `/usr/bin/date +\"\%-d\" --date=\"$ENV{REPORT_DATE} - 1 day\"` );
+    chomp( $month = `/usr/bin/date -d '$ENV{REPORT_DATE}' +\"\%m\"` );
+    chomp( $last_month =
+            `/usr/bin/date +\"\%m\" --date=\"$ENV{REPORT_DATE} - 1 month\"` );
+    chomp( $year = `/usr/bin/date -d '$ENV{REPORT_DATE}' +\"\%Y\"` );
+    chomp( $last_year =
+            `/usr/bin/date +\"\%Y\" --date=\"$ENV{REPORT_DATE} - 1 year\"` );
+    chomp( $today_mysqlformat =
+            `/usr/bin/date -d '$ENV{REPORT_DATE}' +\"%Y-\%m-\%d\"` );
+    chomp( $yesterday_mysqlformat =
+            `/usr/bin/date +\"%Y-\%m-\%d\" --date=\"$ENV{REPORT_DATE} -1 day\"`
+    );
+}
+
 # Bucket name with billing data in it
 
 my $bucket     = $config->{gcp}{bucket};

@@ -24,8 +24,13 @@ die "Error parsing config file: $@" if $@;
 die "Error reading config file: $!" unless defined $config;
 
 # === Download report manifest and archive ===
-my $this_month    = localtime->strftime("%Y%m01");
-my $next_month    = ( localtime() + ONE_MONTH )->strftime("%Y%m01");
+my $this_month = localtime->strftime("%Y%m01");
+my $next_month = ( localtime() + ONE_MONTH )->strftime("%Y%m01");
+if ( defined $ENV{REPORT_DATE} ) {
+    chomp( $this_month = `/usr/bin/date -d '$ENV{REPORT_DATE}' +"%Y%m01"` );
+    chomp( $next_month =
+            `/usr/bin/date -d '$ENV{REPORT_DATE} + 1 month' +"%Y%m01"` );
+}
 my $report_prefix = "$config->{aws}{prefix}/$config->{aws}{report_name}/";
 $report_prefix .= "$this_month-$next_month";
 my $manifest_name       = "$config->{aws}{report_name}-Manifest.json";
@@ -54,7 +59,10 @@ my $manifest = decode_json $manifest_data;
 
 # Reports that are sufficiently large can be split into multiple files.
 # That is not the case for us right now.
-my $archive_path       = $manifest->{"reportKeys"}[0];
+my $archive_path = $manifest->{"reportKeys"}[0];
+if ( defined $ENV{REPORT_CUR_GZ_PATH} ) {
+    $archive_path = $ENV{REPORT_CUR_GZ_PATH};
+}
 my $local_archive_path = File::Spec->catfile( $workdir, "report.gz" );
 $bucket->get_key_filename( $archive_path, undef, $local_archive_path )
     or die "s3: no such key $local_archive_path, stopped";
@@ -159,7 +167,13 @@ my $now = localtime();
 my $yesterday_mysqlformat =
     ( $now - ONE_HOUR * ( $now->hour + 12 ) )->strftime("%Y-%m-%d");
 my $is_first_day = localtime->strftime("%d") eq "01";
-my $missing      = 0;
+if ( defined $ENV{REPORT_DATE} ) {
+    chomp( $yesterday_mysqlformat =
+            `/usr/bin/date -d '$ENV{REPORT_DATE} - 1 day' +"%Y-%m-%d"` );
+    chomp( $is_first_day = `/usr/bin/date -d '$ENV{REPORT_DATE}' +"%d"` );
+    $is_first_day = $is_first_day eq '01';
+}
+my $missing = 0;
 my %service_by_account_yesterday;
 
 # %service_by_account_yesterday has the same form as %service_by_account, but
@@ -209,6 +223,10 @@ for my $account_id ( keys %service_by_account ) {
 # === Insert new aggregate data into database ===
 my $exists            = 0;
 my $today_mysqlformat = localtime->strftime("%Y-%m-%d");
+if ( defined $ENV{REPORT_DATE} ) {
+    chomp( $today_mysqlformat =
+            `/usr/bin/date -d '$ENV{REPORT_DATE}' +"%Y-%m-%d"` );
+}
 for my $account_id ( keys %service_by_account ) {
     my $account_name = $config->{aws}{accounts}{$account_id};
     if ( !defined $account_name ) {
@@ -326,7 +344,11 @@ my $local_email_draft_path = File::Spec->catfile( $workdir, 'mailtmp.txt' );
 open my $MAIL, '>:encoding(utf8)', $local_email_draft_path
     or die "$local_email_draft_path: $!, stopped";
 my $current_day = localtime->strftime("%B %d, %Y");
-my $subject     = "AWS Report for $current_day";
+if ( defined $ENV{REPORT_DATE} ) {
+    chomp( $current_day =
+            `/usr/bin/date -d '$ENV{REPORT_DATE}' +"%B %d, %Y"` );
+}
+my $subject = "AWS Report for $current_day";
 
 # Styles are custom and cherry-picked from pure-css 1.0.1
 # For styles to show in gmail, they must be in <head> and not <body>

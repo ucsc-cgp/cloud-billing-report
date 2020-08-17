@@ -40,6 +40,12 @@ Then:
 will deposit `report.html` in `aws/`, where you can open it in your browser or
 send it with `sendmail` or something like that.
 
+You can generate a report for a past date by setting both the `REPORT_DATE` and
+the `REPORT_CUR_GZ_PATH` environment variables. This process is a little
+finicky; because AWS CUR does not store a record of assembly IDs for past dates,
+the best way to get the `REPORT_CUR_GZ_PATH` is to look at the mtime of reports
+in S3.
+
 ### Known issues
 
 If AWS is refusing your requests with a 403 error and you know that your keys

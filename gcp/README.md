@@ -40,6 +40,9 @@ will run the script. When run in this fashion, it will write the generated
 report to `report.html` instead of sending it to recipients. (You can control
 this by setting the `REPORT_DEBUG` environment variable.)
 
+You can generate a report for a certain date by setting the `REPORT_DATE`
+environment variable.
+
 ### Without docker-compose
 
 If you're installing without using Docker, you can install dependencies with

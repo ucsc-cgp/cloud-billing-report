@@ -4,6 +4,7 @@ services:
     build: .
     environment:
       TZ: 'America/Los_Angeles'
+      # REPORT_DATE: '2020-08-02'
     volumes:
       - '~/.config/gcloud/:/root/.config/gcloud/:ro'
       - './cache/:/root/gcp-reporting/cache/'
