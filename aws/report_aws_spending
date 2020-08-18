@@ -133,7 +133,7 @@ my @SERVICES = (
     'Amazon Data Pipeline',    # TODO: may deviate from CUR name
     'AWS Key Management Service',
     'Amazon SimpleDB',
-    'Amazon CloudWatch',
+    'AmazonCloudWatch',
     'AWS CloudTrail',
     'Amazon Simple Queue Service',
     'Amazon Simple Notification Service',
@@ -253,17 +253,18 @@ outer:
 
         # Data is not there yet for today, let's put it in there!
         my $ins = $db->prepare(
-            "INSERT INTO \`$account_name\`
-        (report_date, data_tally, s3_tally, support_dev_tally, route53_tally, datapipeline_tally,
-        awskms_tally, simpledb_tally, cloudwatch_tally, cloudtrail_tally,
-        queueservice_tally, notification_tally, lambda_tally, registrar_tally,
-        ec2_total, amazonapigateway_tally, amazondynamodb_tally, amazoneks_tally,
-        amazones_tally, amazonrds_tally, amazonstates_tally, amazonvpc_tally,
-        awssecretsmanager_tally, cloudfront_tally, guardduty_tally,
-        awsconfig_tally, costexplorer_tally, support_bus_tally, xray_tally,
-        awsglue_tally, unknown_tally, grand_total) VALUES
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO \`$account_name\` (report_date,
+            data_tally, s3_tally, support_dev_tally, route53_tally,
+            datapipeline_tally, awskms_tally, simpledb_tally,
+            cloudwatch_tally, cloudtrail_tally, queueservice_tally,
+            notification_tally, lambda_tally, registrar_tally, ec2_total,
+            amazonapigateway_tally, amazondynamodb_tally, amazoneks_tally,
+            amazones_tally, amazonrds_tally, amazonstates_tally,
+            amazonvpc_tally, awssecretsmanager_tally, cloudfront_tally,
+            guardduty_tally, awsconfig_tally, costexplorer_tally,
+            support_bus_tally, xray_tally, awsglue_tally, unknown_tally,
+            grand_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         $ins->execute(
             $today_mysqlformat,
@@ -274,7 +275,7 @@ outer:
             $service_by_account{$account_id}{'Amazon Data Pipeline'},
             $service_by_account{$account_id}{'AWS Key Management Service'},
             $service_by_account{$account_id}{'Amazon SimpleDB'},
-            $service_by_account{$account_id}{'Amazon CloudWatch'},
+            $service_by_account{$account_id}{'AmazonCloudWatch'},
             $service_by_account{$account_id}{'AWS CloudTrail'},
             $service_by_account{$account_id}{'Amazon Simple Queue Service'},
             $service_by_account{$account_id}
