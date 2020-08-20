@@ -64,8 +64,23 @@ if ( defined $ENV{REPORT_CUR_GZ_PATH} ) {
     $archive_path = $ENV{REPORT_CUR_GZ_PATH};
 }
 my $local_archive_path = File::Spec->catfile( $workdir, "report.gz" );
-$bucket->get_key_filename( $archive_path, undef, $local_archive_path )
-    or die "s3: no such key $local_archive_path, stopped";
+my $is_first_day       = localtime->strftime("%d") eq "01";
+unless (
+    $bucket->get_key_filename( $archive_path, undef, $local_archive_path ) )
+{
+    # On the first day of the month, billing data may not be available until
+    # late in the day. If the script is run early in the day, it would fail.
+    # The workaround we use is to not raise an error if a report isn't
+    # available at runtime on the first day of the month. (It's easy enough
+    # to generate a report for the first day after the fact if we miss it.)
+    if ($is_first_day) {
+        warn "s3: no such key $archive_path, expecting it later";
+        exit 0;
+    }
+    else {
+        die "s3: no such key $archive_path, stopped";
+    }
+}
 my $local_report_path = File::Spec->catfile( $workdir, "report.csv" );
 gunzip $local_archive_path => $local_report_path
     or die "$local_archive_path: $GunzipError, stopped";
@@ -166,7 +181,6 @@ my $db = DBI->connect(
 my $now = localtime();
 my $yesterday_mysqlformat =
     ( $now - ONE_HOUR * ( $now->hour + 12 ) )->strftime("%Y-%m-%d");
-my $is_first_day = localtime->strftime("%d") eq "01";
 if ( defined $ENV{REPORT_DATE} ) {
     chomp( $yesterday_mysqlformat =
             `/usr/bin/date -d '$ENV{REPORT_DATE} - 1 day' +"%Y-%m-%d"` );
