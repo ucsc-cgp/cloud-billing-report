@@ -123,13 +123,13 @@ while ( $csv->getline($report) ) {
     if ( $service eq "Amazon Elastic Compute Cloud" ) {
         my $owner = $row->{"resourceTags/user:Owner"};
         my $name  = $row->{"resourceTags/user:Name"};
-        if ( !defined $name or $name eq "" ) {
+        if ( not( defined $name ) or $name eq "" ) {
             $ec2_by_name{"(untagged)"} += $amount;
         }
         else {
             $ec2_by_name{$name} += $amount;
         }
-        if ( !defined $owner or $owner eq "" ) {
+        if ( not( defined $owner ) or $owner eq "" ) {
             $ec2_owner_by_account{$account_id}{"(untagged)"} += $amount;
         }
         else {
@@ -328,7 +328,7 @@ sub print_diff {
 
    # Some services do not have history stored because of the current db schema
    # and will be passed to `print_diff` as undef
-    if ( !defined $_[0] or $_[0] eq "" ) {
+    if ( not( defined $_[0] ) or $_[0] eq "" ) {
         return "N/A";
 
         # Ignore sufficiently small amounts

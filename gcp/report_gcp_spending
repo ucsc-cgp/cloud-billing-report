@@ -208,7 +208,7 @@ sub print_diff {
 
    # Some services do not have history stored because of the current db schema
    # and will be passed to `print_diff` as undef
-    if ( $_[0] eq "" or !defined $_[0] ) {
+    if ( not( defined $_[0] ) or $_[0] eq "" ) {
         return "N/A";
 
         # Ignore sufficiently small amounts
