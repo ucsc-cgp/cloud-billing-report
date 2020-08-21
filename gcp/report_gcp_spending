@@ -282,10 +282,8 @@ foreach my $project ( @{ $config->{gcp}{projects} } ) {
 foreach my $project ( @{ $config->{gcp}{projects} } ) {
     if ( $today != 2 ) {
         my $grab = $connect->prepare(
-            "SELECT * FROM \`$project\` WHERE report_date = \"$yesterday_mysqlformat\""
-        );
-        $grab->execute()
-            or print "\nCouldn't execute statement: " . $grab->errstr . "\n";
+            "SELECT * FROM \`$project\` WHERE report_date = ?");
+        $grab->execute($yesterday_mysqlformat);
 
         if ( $grab->rows > 0 ) {
             while ( my @data = $grab->fetchrow_array() ) {
@@ -319,34 +317,28 @@ foreach my $project ( @{ $config->{gcp}{projects} } ) {
 # Populate the gcp_reporting database with today's dollar amounts
 
 foreach my $project ( @{ $config->{gcp}{projects} } ) {
-
     my $sum;
-
     my $compute   = $computeEngine{$project};
     my $storage   = $cloudStorage{$project};
     my $logs      = $logging{$project};
     my $functions = $cloudfunctions{$project};
     my $pubs      = $pubsub{$project};
-
     $sum = $total{$project};
 
-    my $grab = $connect->prepare(
-        "SELECT * FROM \`$project\` WHERE report_date = \"$today_mysqlformat\""
-    );
-    $grab->execute()
-        or print "\nCouldn't execute statement: " . $grab->errstr . "\n";
+    my $grab =
+        $connect->prepare("SELECT * FROM \`$project\` WHERE report_date = ?");
+    $grab->execute($today_mysqlformat);
 
     if ( $grab->rows == 0 ) {
 
         # Data is not there yet for today, let's put it in there!
-
-        $connect->do(
-            "INSERT INTO \`$project\`
-		(report_date, compute_engine_tally, pubsub_tally, cloudfunctions_tally,
-		logging_tally, cloud_storage_tally, grand_total) VALUES
-		(\"$today_mysqlformat\", \"$compute\", \"$pubs\", \"$functions\",
-		\"$logs\", \"$storage\", \"$sum\")"
+        $connect->prepare(
+            "INSERT INTO \`$project\` (report_date, compute_engine_tally,
+            pubsub_tally, cloudfunctions_tally, logging_tally,
+            cloud_storage_tally, grand_total) VALUES (?, ?, ?, ?, ?, ?, ?);"
         );
+        $connect->execute( $today_mysqlformat, $compute,
+            $pubs, $functions, $logs, $storage, $sum );
     }
     else {
 # print $MAILSEND "\nSkipping DB entry for $project - today's data already exists.\n";
