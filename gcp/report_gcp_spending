@@ -96,15 +96,6 @@ foreach my $project ( @{ $config->{gcp}{projects} } ) {
 
 my $supportCost = 0;
 
-# Open MAIL temporary file to populate with email data
-open my $MAIL, '>', "/tmp/mailtemp.txt";
-
-print $MAIL "Google Cloud Platform Report for $current_day\n";
-if ( $today eq "01" ) {
-    print $MAIL
-        "Yesterday was the first day of the billing period, so all tallies are reset\!\n\n";
-}
-
 # Get all GCP billing CSV files for the month so far
 # GCP only shows charges for a single day in each CSV file,
 # so we need to get them all for this month before tallying stats
@@ -325,7 +316,50 @@ foreach my $project ( @{ $config->{gcp}{projects} } ) {
     }
 }
 
-print $MAIL "<!doctype html>
+# Populate the gcp_reporting database with today's dollar amounts
+
+foreach my $project ( @{ $config->{gcp}{projects} } ) {
+
+    my $sum;
+
+    my $compute   = $computeEngine{$project};
+    my $storage   = $cloudStorage{$project};
+    my $logs      = $logging{$project};
+    my $functions = $cloudfunctions{$project};
+    my $pubs      = $pubsub{$project};
+
+    $sum = $total{$project};
+
+    my $grab = $connect->prepare(
+        "SELECT * FROM \`$project\` WHERE report_date = \"$today_mysqlformat\""
+    );
+    $grab->execute()
+        or print "\nCouldn't execute statement: " . $grab->errstr . "\n";
+
+    if ( $grab->rows == 0 ) {
+
+        # Data is not there yet for today, let's put it in there!
+
+        $connect->do(
+            "INSERT INTO \`$project\`
+		(report_date, compute_engine_tally, pubsub_tally, cloudfunctions_tally,
+		logging_tally, cloud_storage_tally, grand_total) VALUES
+		(\"$today_mysqlformat\", \"$compute\", \"$pubs\", \"$functions\",
+		\"$logs\", \"$storage\", \"$sum\")"
+        );
+    }
+    else {
+# print $MAILSEND "\nSkipping DB entry for $project - today's data already exists.\n";
+    }
+}
+
+my $report = "Mime-Version: 1.0
+Content-Type: text/html; charset='UTF-8'
+To: " . join( ',', @{ $config->{report}{recipients} } ) . "
+From: $config->{report}{from}
+Subject: GCP Report for $current_day
+
+<!doctype html>
 <html lang='en'>
 <head>
 	<meta charset='utf-8'>
@@ -373,7 +407,14 @@ print $MAIL "<!doctype html>
 	</style>
 </head>
 <body>
-<h2>Totals by project</h2>
+
+Google Cloud Platform Report for $current_day";
+if ( $today eq "01" ) {
+    $report
+        .= "Yesterday was the first day of the billing period, so all tallies are reset!\n\n";
+}
+
+$report .= "<h2>Totals by project</h2>
 <table>
 	<thead>
 		<tr>
@@ -385,14 +426,14 @@ print $MAIL "<!doctype html>
 	<tbody>";
 
 foreach my $project ( @{ $config->{gcp}{projects} } ) {
-    print $MAIL "
+    $report .= "
 		<tr>
 			<td><a href=\"#$project\">$project</a></td>
 			<td>\$" . sprintf( "%.2f", $total{$project} ) . "</td>
 			<td>" . print_diff( $total_diff{$project} ) . "</td>
 		</tr>";
 }
-print $MAIL "
+$report .= "
 		<tr>
 			<td>(support contract)</td>
 			<td>\$" . sprintf( "%.2f", $supportCost ) . "</td>
@@ -415,8 +456,8 @@ foreach my $project ( @{ $config->{gcp}{projects} } ) {
         + $logging{"$project"}
         + $cloudfunctions{"$project"}
         + $pubsub{"$project"};
-    print $MAIL
-        "<a name=\"$project\" id=\"$project\"></a><h2>Report for account $project</h2>
+    $report
+        .= "<a name=\"$project\" id=\"$project\"></a><h2>Report for account $project</h2>
 <table>
 	<thead>
 		<tr>
@@ -461,65 +502,10 @@ foreach my $project ( @{ $config->{gcp}{projects} } ) {
 	</tfoot>
 	</table>";
 }
-print $MAIL "</body></html>";
+$report .= "</body></html>";
 
-close($MAIL);
-
-open my $MAIL_, '<', "/tmp/mailtemp.txt";
-my $command = "/usr/sbin/sendmail -t";
-if ( defined $ENV{REPORT_DEBUG} ) {
-    $command = "tee report.html";
-}
-open my $MAILSEND, "|-", $command;
-
-print $MAILSEND "Mime-Version: 1.0
-Content-Type: text/html; charset='UTF-8'
-To: " . join( ',', @{ $config->{report}{recipients} } ) . "
-From: $config->{report}{from}
-Subject: GCP Report for $current_day\n\n";
-
-# Populate the gcp_reporting database with today's dollar amounts
-
-foreach my $project ( @{ $config->{gcp}{projects} } ) {
-
-    my $sum;
-
-    my $compute   = $computeEngine{$project};
-    my $storage   = $cloudStorage{$project};
-    my $logs      = $logging{$project};
-    my $functions = $cloudfunctions{$project};
-    my $pubs      = $pubsub{$project};
-
-    $sum = $total{$project};
-
-    my $grab = $connect->prepare(
-        "SELECT * FROM \`$project\` WHERE report_date = \"$today_mysqlformat\""
-    );
-    $grab->execute()
-        or print "\nCouldn't execute statement: " . $grab->errstr . "\n";
-
-    if ( $grab->rows == 0 ) {
-
-        # Data is not there yet for today, let's put it in there!
-
-        $connect->do(
-            "INSERT INTO \`$project\`
-		(report_date, compute_engine_tally, pubsub_tally, cloudfunctions_tally,
-		logging_tally, cloud_storage_tally, grand_total) VALUES
-		(\"$today_mysqlformat\", \"$compute\", \"$pubs\", \"$functions\",
-		\"$logs\", \"$storage\", \"$sum\")"
-        );
-    }
-    else {
-#		print $MAILSEND "\nSkipping DB entry for $project - today's data already exists.\n";
-    }
-}
-
-while (<$MAIL_>) {
-    print $MAILSEND "$_";
-}
-
-close($MAIL_);
+my $cmd =
+    defined $ENV{REPORT_DEBUG} ? "tee report.html" : "/usr/sbin/sendmail -t";
+open my $MAILSEND, "|-", $cmd;
+print $MAILSEND $report;
 close($MAILSEND);
-
-unlink("/tmp/mailtemp.txt");
