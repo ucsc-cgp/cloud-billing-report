@@ -45,10 +45,26 @@ my $s3                  = Amazon::S3->new(
 );
 my $bucket = $s3->bucket( $config->{aws}{bucket} );
 
+my $is_first_day = localtime->strftime("%d") eq "01";
+
 # This file is overwritten by AWS whenever a new report is generated with
 # the path to the latest report.
-$bucket->get_key_filename( $manifest_path, undef, $local_manifest_path )
-    or die "s3: no such key $manifest_path, stopped";
+unless (
+    $bucket->get_key_filename( $manifest_path, undef, $local_manifest_path ) )
+{
+    # On the first day of the month, billing data may not be available until
+    # late in the day. If the script is run early in the day, it would fail.
+    # The workaround we use is to not raise an error if a report isn't
+    # available at runtime on the first day of the month. (It's easy enough
+    # to generate a report for the first day after the fact if we miss it.)
+    if ($is_first_day) {
+        warn "s3: no such key $manifest_path, expecting it later";
+        exit 0;
+    }
+    else {
+        die "s3: no such key $manifest_path, stopped";
+    }
+}
 my $manifest_data = do {
     local $/ = undef;
     open my $manifest_fh, "<:encoding(utf8)", $local_manifest_path
@@ -64,23 +80,8 @@ if ( defined $ENV{REPORT_CUR_GZ_PATH} ) {
     $archive_path = $ENV{REPORT_CUR_GZ_PATH};
 }
 my $local_archive_path = File::Spec->catfile( $workdir, "report.gz" );
-my $is_first_day       = localtime->strftime("%d") eq "01";
-unless (
-    $bucket->get_key_filename( $archive_path, undef, $local_archive_path ) )
-{
-    # On the first day of the month, billing data may not be available until
-    # late in the day. If the script is run early in the day, it would fail.
-    # The workaround we use is to not raise an error if a report isn't
-    # available at runtime on the first day of the month. (It's easy enough
-    # to generate a report for the first day after the fact if we miss it.)
-    if ($is_first_day) {
-        warn "s3: no such key $archive_path, expecting it later";
-        exit 0;
-    }
-    else {
-        die "s3: no such key $archive_path, stopped";
-    }
-}
+$bucket->get_key_filename( $archive_path, undef, $local_archive_path )
+    or die "s3: no such key $archive_path, stopped";
 my $local_report_path = File::Spec->catfile( $workdir, "report.csv" );
 gunzip $local_archive_path => $local_report_path
     or die "$local_archive_path: $GunzipError, stopped";
