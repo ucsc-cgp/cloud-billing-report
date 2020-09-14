@@ -428,7 +428,7 @@ $report .= "<h2>Totals by project</h2>
 	</thead>
 	<tbody>";
 
-foreach my $project ( @{ $config->{gcp}{projects} } ) {
+foreach my $project ( sort @{ $config->{gcp}{projects} } ) {
     $report .= "
 		<tr>
 			<td><a href=\"#$project\">$project</a></td>
@@ -452,7 +452,7 @@ $report .= "
 	</tfoot>
 </table>";
 
-foreach my $project ( @{ $config->{gcp}{projects} } ) {
+foreach my $project ( sort @{ $config->{gcp}{projects} } ) {
     my $proj_total =
           $computeEngine{"$project"}
         + $cloudStorage{"$project"}

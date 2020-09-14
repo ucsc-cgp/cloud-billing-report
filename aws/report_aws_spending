@@ -365,6 +365,11 @@ sub sum_undef {
 }
 
 # === Generate email ===
+# Rearrange account listing so we can display it alphabetically
+my @accounts_sorted = sort {
+    lc ${config}->{aws}{accounts}{$a} cmp lc ${config}->{aws}{accounts}{$b}
+} keys %service_by_account;
+
 # Write email to disk first so that we don't send out a borked email if this
 # script fails before completion
 my $local_email_draft_path = File::Spec->catfile( $workdir, 'mailtmp.txt' );
@@ -469,7 +474,7 @@ Amazon Web Services report for $current_day<br>
 my $all_accounts_total           = 0;
 my $all_accounts_total_yesterday = 0;
 
-foreach my $account_id ( sort keys %service_by_account ) {
+foreach my $account_id (@accounts_sorted) {
     my $account_total = sum values %{ $service_by_account{$account_id} };
     my $account_total_yesterday =
         sum_undef( values %{ $service_by_account_yesterday{$account_id} } );
@@ -500,7 +505,7 @@ print $MAIL "\
     </tfoot>
 </table>";
 
-foreach my $account_id ( sort keys %service_by_account ) {
+foreach my $account_id (@accounts_sorted) {
     my $account_name = $config->{aws}{accounts}{$account_id};
     next if !defined $account_name;
 
