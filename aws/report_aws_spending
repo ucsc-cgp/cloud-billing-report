@@ -325,24 +325,35 @@ outer:
     }
 }
 
+my $warning_threshold =
+    defined ${config}->{report}{warning_threshold}
+    ? ${config}->{report}{warning_threshold}
+    : 200;
+
+# print_diff(amount) to print an amount, with highlighting if amount is large
+# print_diff(amount, warnflag) to  print an amount, without highlighting
 sub print_diff {
+    my ( $amount, $warnflag ) = @_;
 
    # Some services do not have history stored because of the current db schema
    # and will be passed to `print_diff` as undef
-    if ( not( defined $_[0] ) or $_[0] eq "" ) {
+    if ( not( defined $amount ) or $amount eq "" ) {
         return "N/A";
 
         # Ignore sufficiently small amounts
     }
-    elsif ( $_[0] > 0.01 ) {
-        return sprintf( "\$%.2f", $_[0] );
+    elsif ( $amount > $warning_threshold and not defined $warnflag ) {
+        return sprintf( "<span class='unusual'>\$%.2f</span>", $amount );
     }
-    elsif ( $_[0] < -0.01 ) {
+    elsif ( $amount > 0.01 ) {
+        return sprintf( "\$%.2f", $amount );
+    }
+    elsif ( $amount < -0.01 ) {
 
         # A negative value is unlikely but possible in the event of, for
         # example, a credit from AWS
-        my $absolute = sprintf( "-\$%.2f", abs( $_[0] ) );
-        return "<span class='neg'>$absolute</span>";
+        my $absolute = sprintf( "-\$%.2f", abs($amount) );
+        return "<span class='unusual'>$absolute</span>";
     }
     else {
         return "";
@@ -418,7 +429,7 @@ Subject: $subject
         h1 { font-size:2em; margin:.67em 0; }
         tbody > tr:hover, tfoot > tr:hover { background-color: #f2f2f2; }
         tfoot { font-weight: 700; }
-        .neg { font-weight: 700; color: red; }
+        .unusual { font-weight: 700; color: red; }
     </style>
 </head>
 <body>
@@ -483,7 +494,7 @@ print $MAIL "\
             <td>Grand total</td>
             <td>" . sprintf( "\$%.2f", $all_accounts_total ) . "</td>
             <td>"
-    . print_diff( $all_accounts_total - $all_accounts_total_yesterday )
+    . print_diff( $all_accounts_total - $all_accounts_total_yesterday, 1 )
     . "</td>
         </tr>
     </tfoot>

@@ -18,6 +18,8 @@
         pass => 'hunter2'
     },
     report => {
+        # Highlight diffs over this dollar amount
+        warning_threshold => 200,
         from => 'joe@example.com',
         recipients => [
             'test@example.com',
