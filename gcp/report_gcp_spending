@@ -343,12 +343,12 @@ foreach my $project ( @{ $config->{gcp}{projects} } ) {
     if ( $grab->rows == 0 ) {
 
         # Data is not there yet for today, let's put it in there!
-        $connect->prepare(
+        my $stmt = $connect->prepare(
             "INSERT INTO \`$project\` (report_date, compute_engine_tally,
             pubsub_tally, cloudfunctions_tally, logging_tally,
             cloud_storage_tally, grand_total) VALUES (?, ?, ?, ?, ?, ?, ?);"
         );
-        $connect->execute( $today_mysqlformat, $compute,
+        $stmt->execute( $today_mysqlformat, $compute,
             $pubs, $functions, $logs, $storage, $sum );
     }
     else {
