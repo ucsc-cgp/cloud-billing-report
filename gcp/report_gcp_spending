@@ -155,12 +155,13 @@ sub grab_csv_data {
 my $warning_threshold =
     defined ${config}->{report}{warning_threshold}
     ? ${config}->{report}{warning_threshold}
-    : 200;
+    : -1;
 
 # print_diff(amount) to print an amount, with highlighting if amount is large
 # print_diff(amount, warnflag) to  print an amount, without highlighting
 sub print_diff {
-    my ( $amount, $warnflag ) = @_;
+    my ( $amount, $nowarn ) = @_;
+    my $warn = $warning_threshold > 0 && !defined $nowarn;
 
    # Some services do not have history stored because of the current db schema
    # and will be passed to `print_diff` as undef
@@ -169,7 +170,7 @@ sub print_diff {
 
         # Ignore sufficiently small amounts
     }
-    elsif ( $amount > $warning_threshold and not defined $warnflag ) {
+    elsif ( $warn and $amount > $warning_threshold ) {
         return sprintf( "<span class='unusual'>\$%.2f</span>", $amount );
     }
     elsif ( $amount > 0.01 ) {
