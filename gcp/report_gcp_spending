@@ -25,8 +25,6 @@ my $connect = DBI->connect(
     { RaiseError => 1 }
 );
 
-my $csv = Text::CSV->new( { sep_char => ',' } );
-
 # Initialize date variables
 
 chomp( my $current_day       = `/usr/bin/date +\"\%B \%d, \%Y\"` );
@@ -113,85 +111,44 @@ foreach my $days ( 1 .. $yesterday ) {
 
 # Open the CSV file and iterate through each line to grab all the data
 sub grab_csv_data {
+    my ($fname) = @_;
     my $cache_dir = "/root/gcp-reporting/cache/";
     `mkdir -p $cache_dir`;
-    my $fname       = $_[0];
-    my $workingFile = catfile( $cache_dir, $fname );
-    unless ( -e $workingFile ) {
+    my $local_report_path = catfile( $cache_dir, $fname );
+    unless ( -e $local_report_path ) {
         print "Getting new file $fname\n";
         `/root/google-cloud-sdk/bin/gsutil cp gs://$bucket/$fname $cache_dir`;
     }
 
-    open( my $data, '<', $workingFile )
-        or die "Could not open '$workingFile' $!\n";
-
-    $csv->column_names( $csv->getline($data) );
-    while ( my $href = $csv->getline_hr($data) ) {
-        my $lineitem = $href->{'Line Item'};
-        my @service  = split( '/', $lineitem );
-        foreach my $project ( @{ $config->{gcp}{projects} } ) {
-            if ( $href->{'Project Name'} eq "$project" ) {
-
-                if ( $service[2] eq "compute-engine" ) {
-                    if ( $computeEngine{"$project"} ) {
-                        $computeEngine{"$project"} =
-                            $computeEngine{"$project"} + $href->{'Cost'};
-                    }
-                    else {
-                        $computeEngine{"$project"} = $href->{'Cost'};
-                    }
-                }
-
-                if ( $service[2] eq "cloud-storage" ) {
-                    if ( $cloudStorage{"$project"} ) {
-                        $cloudStorage{"$project"} =
-                            $cloudStorage{"$project"} + $href->{'Cost'};
-                    }
-                    else {
-                        $cloudStorage{"$project"} = $href->{'Cost'};
-                    }
-                }
-
-                if ( $service[2] eq "logging" ) {
-                    if ( $logging{"$project"} ) {
-                        $logging{"$project"} =
-                            $logging{"$project"} + $href->{'Cost'};
-                    }
-                    else {
-                        $logging{"$project"} = $href->{'Cost'};
-                    }
-                }
-
-                if ( $service[2] eq "cloudfunctions" ) {
-                    if ( $logging{"$project"} ) {
-                        $cloudfunctions{"$project"} =
-                            $cloudfunctions{"$project"} + $href->{'Cost'};
-                    }
-                    else {
-                        $cloudfunctions{"$project"} = $href->{'Cost'};
-                    }
-                }
-
-                if ( $service[2] eq "pubsub" ) {
-                    if ( $pubsub{"$project"} ) {
-                        $pubsub{"$project"} =
-                            $pubsub{"$project"} + $href->{'Cost'};
-                    }
-                    else {
-                        $pubsub{"$project"} = $href->{'Cost'};
-                    }
-                }
-
-            }
+    my $csv = Text::CSV->new( { binary => 1, auto_diag => 1, strict => 1 } );
+    open my $report, "<:encoding(utf8)", $local_report_path
+        or die "$local_report_path: $!, stopping";
+    my @cols = @{ $csv->getline($report) };
+    my $row  = {};
+    $csv->bind_columns( \@{$row}{@cols} );
+    while ( $csv->getline($report) ) {
+        my $service = ( split( '/', $row->{'Line Item'} ) )[2];
+        if ( $service eq "compute-engine" ) {
+            $computeEngine{ $row->{'Project Name'} } += $row->{'Cost'};
         }
-
-        if ( $service[2] eq "support" ) {
-            $supportCost = $supportCost + $href->{'Cost'};
+        elsif ( $service eq "cloud-storage" ) {
+            $cloudStorage{ $row->{'Project Name'} } += $row->{'Cost'};
         }
-
+        elsif ( $service eq "logging" ) {
+            $logging{ $row->{'Project Name'} } += $row->{'Cost'};
+        }
+        elsif ( $service eq "cloudfunctions" ) {
+            $cloudfunctions{ $row->{'Project Name'} } += $row->{'Cost'};
+        }
+        elsif ( $service eq "pubsub" ) {
+            $pubsub{ $row->{'Project Name'} } += $row->{'Cost'};
+        }
+        elsif ( $service eq "support" ) {
+            $supportCost += $row->{'Cost'};
+        }
     }
-
-    close($data);
+    close $report or warn "$local_report_path $!";
+    return 1;
 }
 
 # The cost differential subroutine
