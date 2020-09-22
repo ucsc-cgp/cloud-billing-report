@@ -463,7 +463,13 @@ foreach my $project ( sort @{ $config->{gcp}{projects} } ) {
 	</tfoot>
 	</table>";
 }
-$report .= "</body></html>";
+$report .= "
+<hr>
+Source code for this report is available on
+<a href='https://github.com/ucsc-cgp/cloud-billing-report'>GitHub</a>. You
+can report <a href='https://github.com/ucsc-cgp/cloud-billing-report/issues'>
+issues</a> there, too.
+</body></html>";
 
 if ( defined $ENV{REPORT_DEBUG} ) {
     open my $local_report_html, ">", "report.html";
