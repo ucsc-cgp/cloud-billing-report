@@ -248,7 +248,7 @@ for my $account_id ( keys %service_by_account ) {
         warn "unknown account $account_id: add it to config.pl";
         next;
     }
-    my $unknown_total = 0;
+    $service_by_account{$account_id}{"Unknown Services"} = 0;
 outer:
     foreach my $service ( keys %{ $service_by_account{$account_id} } ) {
 
@@ -258,7 +258,8 @@ outer:
         }
         my $service_amount = $service_by_account{$account_id}{$service};
         if ( defined $service_amount ) {
-            $unknown_total += $service_amount;
+            $service_by_account{$account_id}{"Unknown Services"}
+                += $service_amount;
         }
     }
     my $stmt = $db->prepare(
@@ -315,7 +316,7 @@ outer:
             $service_by_account{$account_id}{'Amazon Business Support'},
             $service_by_account{$account_id}{'Amazon X-Ray Service'},
             $service_by_account{$account_id}{'AWS Glue'},
-            $unknown_total,
+            $service_by_account{$account_id}{'Unknown Services'},
             sum values %{ $service_by_account{$account_id} }
         );
     }
@@ -585,16 +586,6 @@ service:
                 <td>" . print_diff($diff) . "</td>
             </tr>";
     }
-    print $MAIL "<tr>
-            <td>Unknown Services</td>
-                <td>N/A</td>
-                <td>"
-        . print_diff(
-        $service_by_account_yesterday{$account_id}{"Unknown Services"} )
-        . "</td>
-            </tr>"
-        if print_diff(
-        $service_by_account_yesterday{$account_id}{"Unknown Services"} );
 
     my $account_total = sum values %{ $service_by_account{$account_id} };
     my $account_total_yesterday =
