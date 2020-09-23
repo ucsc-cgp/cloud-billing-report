@@ -11,12 +11,6 @@
             '098765432' => 'account-name-for-account-id-098765432',
         }
     },
-    db => {
-        host => 'db',
-        database => 'aws_reporting',
-        user => 'root',
-        pass => 'hunter2'
-    },
     report => {
         # Highlight diffs over this dollar amount
         warning_threshold => 200,
