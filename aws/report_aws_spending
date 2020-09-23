@@ -198,7 +198,9 @@ my @accounts_sorted = sort {
 my $local_email_draft_path = File::Spec->catfile( $workdir, 'mailtmp.txt' );
 open my $MAIL, '>:encoding(utf8)', $local_email_draft_path
     or die "$local_email_draft_path: $!, stopped";
-my $subject     = "AWS Report for " . $report_date_obj->strftime('%B %d, %Y');
+my $subject    = "AWS Report for " . $report_date_obj->strftime('%B %d, %Y');
+my $report_ymd = $report_date_obj->ymd('/');
+my $report_mth = $report_date_obj->strftime('%Y/%m');
 
 # Styles are custom and cherry-picked from pure-css 1.0.1
 # For styles to show in gmail, they must be in <head> and not <body>
@@ -262,8 +264,8 @@ $subject<br>
     <thead>
         <tr>
             <th>Account</th>
-            <th>This month</th>
-            <th>Yesterday</th>
+            <th>$report_mth</th>
+            <th>$report_ymd</th>
         </tr>
     </thead>
     <tbody>";
@@ -331,7 +333,7 @@ foreach my $account_id (@accounts_sorted) {
             <thead>
                 <tr>
                     <th>Owner</th>
-                    <th>This month</th>
+                    <th>$report_mth</th>
                 </tr>
             </thead>
             <tbody>";
@@ -359,8 +361,8 @@ foreach my $account_id (@accounts_sorted) {
         <thead>
             <tr>
                 <th>Service</th>
-                <th>This month</th>
-                <th>Yesterday</th>
+                <th>$report_mth</th>
+                <th>$report_ymd</th>
             </tr>
         </thead>
         <tbody>";
