@@ -22,9 +22,13 @@ my $config = do "/root/aws-reporting/config.pl";
 die "Error parsing config file: $@" if $@;
 die "Error reading config file: $!" unless defined $config;
 
+# === Calculate dates (...is this now?) ===
+my $report_date     = defined $ARGV[1] ? $ARGV[1] : localtime->ymd;
+my $report_date_obj = localtime->strptime( $report_date, '%Y-%m-%d' );
+my $this_month      = $report_date_obj->strftime('%Y%m01');
+my $next_month      = ( $report_date_obj + ONE_MONTH )->strftime('%Y%m01');
+
 # === Download report manifest and archive ===
-my $this_month    = localtime->strftime("%Y%m01");
-my $next_month    = ( localtime() + ONE_MONTH )->strftime("%Y%m01");
 my $report_prefix = "$config->{aws}{prefix}/$config->{aws}{report_name}/";
 $report_prefix .= "$this_month-$next_month";
 my $manifest_name       = "$config->{aws}{report_name}-Manifest.json";
@@ -103,7 +107,6 @@ my %ec2_by_name;
 #     "(untagged)" => 393933.21,
 # }
 
-my $report_date = localtime->ymd;
 my $csv = Text::CSV->new( { binary => 1, auto_diag => 1, strict => 1 } );
 open my $report, "<:encoding(utf8)", $local_report_path
     or die "$local_report_path: $!, stopping";
@@ -195,8 +198,7 @@ my @accounts_sorted = sort {
 my $local_email_draft_path = File::Spec->catfile( $workdir, 'mailtmp.txt' );
 open my $MAIL, '>:encoding(utf8)', $local_email_draft_path
     or die "$local_email_draft_path: $!, stopped";
-my $current_day = localtime->strftime("%B %d, %Y");
-my $subject     = "AWS Report for $current_day";
+my $subject     = "AWS Report for " . $report_date_obj->strftime('%B %d, %Y');
 
 # Styles are custom and cherry-picked from pure-css 1.0.1
 # For styles to show in gmail, they must be in <head> and not <body>
@@ -254,7 +256,7 @@ Subject: $subject
     </style>
 </head>
 <body>
-Amazon Web Services report for $current_day<br>
+$subject<br>
 <h2>Totals by account</h2>
 <table>
     <thead>

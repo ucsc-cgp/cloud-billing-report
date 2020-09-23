@@ -25,10 +25,15 @@ Copy the file [config.pl.example](config.pl.example) to
 ## Development
 
     $ docker build -t report_aws .
-    $ docker run -v (pwd)/report.html:/root/aws-reporting/report.html report_aws
+    $ docker run -v $(pwd)/report.html:/root/aws-reporting/report.html report_aws
 
 will deposit `report.html` in `aws/`, where you can open it in your browser or
 send it with `sendmail` or something like that.
+
+Generate reports for past dates like so:
+
+    $ docker run -v $(pwd)/report.html:/root/aws-reporting/report.html \
+          report_aws -- 2020-09-22
 
 ### Known issues
 
