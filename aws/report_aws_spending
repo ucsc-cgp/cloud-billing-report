@@ -5,7 +5,7 @@ use strict;
 use warnings;
 use lib '/usr/lib64/perl5/lib/perl5';
 use Amazon::S3;
-use DBI;
+use DateTime;
 use File::Spec;
 use File::Temp;
 use IO::Uncompress::Gunzip ( 'gunzip', '$GunzipError' );
@@ -24,13 +24,8 @@ die "Error parsing config file: $@" if $@;
 die "Error reading config file: $!" unless defined $config;
 
 # === Download report manifest and archive ===
-my $this_month = localtime->strftime("%Y%m01");
-my $next_month = ( localtime() + ONE_MONTH )->strftime("%Y%m01");
-if ( defined $ENV{REPORT_DATE} ) {
-    chomp( $this_month = `/usr/bin/date -d '$ENV{REPORT_DATE}' +"%Y%m01"` );
-    chomp( $next_month =
-            `/usr/bin/date -d '$ENV{REPORT_DATE} + 1 month' +"%Y%m01"` );
-}
+my $this_month    = localtime->strftime("%Y%m01");
+my $next_month    = ( localtime() + ONE_MONTH )->strftime("%Y%m01");
 my $report_prefix = "$config->{aws}{prefix}/$config->{aws}{report_name}/";
 $report_prefix .= "$this_month-$next_month";
 my $manifest_name       = "$config->{aws}{report_name}-Manifest.json";
@@ -75,10 +70,7 @@ my $manifest = decode_json $manifest_data;
 
 # Reports that are sufficiently large can be split into multiple files.
 # That is not the case for us right now.
-my $archive_path = $manifest->{"reportKeys"}[0];
-if ( defined $ENV{REPORT_CUR_GZ_PATH} ) {
-    $archive_path = $ENV{REPORT_CUR_GZ_PATH};
-}
+my $archive_path       = $manifest->{"reportKeys"}[0];
 my $local_archive_path = File::Spec->catfile( $workdir, "report.gz" );
 $bucket->get_key_filename( $archive_path, undef, $local_archive_path )
     or die "s3: no such key $archive_path, stopped";
@@ -89,6 +81,7 @@ gunzip $local_archive_path => $local_report_path
 # === Parse CSV ===
 # The report is parsed into three primary structures:
 my %service_by_account;
+my %service_by_account_yesterday;
 
 # my %service_by_account = {
 #     12345678 => {
@@ -110,6 +103,8 @@ my %ec2_by_name;
 #     "my-name-tag" => 82.666,
 #     "(untagged)" => 393933.21,
 # }
+
+my $report_date = DateTime->today->date;
 my $csv = Text::CSV->new( { binary => 1, auto_diag => 1, strict => 1 } );
 open my $report, "<:encoding(utf8)", $local_report_path
     or die "$local_report_path: $!, stopping";
@@ -120,211 +115,35 @@ while ( $csv->getline($report) ) {
     my $account_id = $row->{"lineItem/UsageAccountId"};
     my $service    = $row->{"product/ProductName"};
     my $amount     = $row->{"lineItem/BlendedCost"};
-    $service_by_account{$account_id}->{$service} += $amount;
-    if ( $service eq "Amazon Elastic Compute Cloud" ) {
-        my $owner = $row->{"resourceTags/user:Owner"};
-        my $name  = $row->{"resourceTags/user:Name"};
-        if ( not( defined $name ) or $name eq "" ) {
-            $ec2_by_name{"(untagged)"} += $amount;
+    my $date       = substr $row->{"lineItem/UsageEndDate"}, 0, 10;
+
+    # First 10 chars of ISO8601 datetime is the date, which we can lex sort
+
+    if ( $date eq $report_date ) {
+        $service_by_account{$account_id}->{$service} += $amount;
+        if ( $service eq "Amazon Elastic Compute Cloud" ) {
+            my $owner = $row->{"resourceTags/user:Owner"};
+            my $name  = $row->{"resourceTags/user:Name"};
+            if ( not( defined $name ) or $name eq "" ) {
+                $ec2_by_name{"(untagged)"} += $amount;
+            }
+            else {
+                $ec2_by_name{$name} += $amount;
+            }
+            if ( not( defined $owner ) or $owner eq "" ) {
+                $ec2_owner_by_account{$account_id}{"(untagged)"} += $amount;
+            }
+            else {
+                $ec2_owner_by_account{$account_id}->{$owner} += $amount;
+            }
         }
-        else {
-            $ec2_by_name{$name} += $amount;
-        }
-        if ( not( defined $owner ) or $owner eq "" ) {
-            $ec2_owner_by_account{$account_id}{"(untagged)"} += $amount;
-        }
-        else {
-            $ec2_owner_by_account{$account_id}->{$owner} += $amount;
-        }
+    }
+    elsif ( $date lt $report_date ) {
+        $service_by_account{$account_id}->{$service}           += $amount;
+        $service_by_account_yesterday{$account_id}->{$service} += $amount;
     }
 }
 close $report or warn "$local_report_path: $!";
-
-# === Read yesterday's aggregate data from database ===
-my @SERVICES = (
-    'AWS Data Transfer',
-    'Amazon Simple Storage Service',
-    'AWS Support (Developer)',
-    'Amazon Route 53',
-    'Amazon Data Pipeline',    # TODO: may deviate from CUR name
-    'AWS Key Management Service',
-    'Amazon SimpleDB',
-    'AmazonCloudWatch',
-    'AWS CloudTrail',
-    'Amazon Simple Queue Service',
-    'Amazon Simple Notification Service',
-    'AWS Lambda',
-    'Amazon Registrar',
-    'Amazon Elastic Compute Cloud',
-    'Amazon API Gateway',
-    'Amazon DynamoDB',
-    'Amazon Elastic Container Service for Kubernetes',
-    'Amazon Elasticsearch Service',
-    'Amazon Relational Database Service',
-    'AWS Step Functions',
-    'Amazon Virtual Private Cloud',
-    'AWS Secrets Manager',
-    'Amazon CloudFront',
-    'Amazon GuardDuty',
-    'AWS Config',
-    'Amazon Cost Explorer Service',    # TODO: may deviate from CUR name
-    'Amazon Business Support',         # TODO: may deviate from CUR name
-    'Amazon X-Ray Service',            # TODO: may deviate from CUR name
-    'AWS Glue',
-    'Unknown Services'
-);
-my $db = DBI->connect(
-    "DBI:mysql:database=$config->{db}{database};host=$config->{db}{host}",
-    $config->{db}{user},
-    $config->{db}{pass},
-    { RaiseError => 1 }
-) or die "$DBI::errstr, stopping";
-my $now = localtime();
-my $yesterday_mysqlformat =
-    ( $now - ONE_HOUR * ( $now->hour + 12 ) )->strftime("%Y-%m-%d");
-if ( defined $ENV{REPORT_DATE} ) {
-    chomp( $yesterday_mysqlformat =
-            `/usr/bin/date -d '$ENV{REPORT_DATE} - 1 day' +"%Y-%m-%d"` );
-    chomp( $is_first_day = `/usr/bin/date -d '$ENV{REPORT_DATE}' +"%d"` );
-    $is_first_day = $is_first_day eq '01';
-}
-my $missing = 0;
-my %service_by_account_yesterday;
-
-# %service_by_account_yesterday has the same form as %service_by_account, but
-# has yesterday's data
-for my $account_id ( keys %service_by_account ) {
-
-    # On the first day of the month, the diff should equal today's total
-    if ($is_first_day) {
-        for my $service ( keys %{ $service_by_account{$account_id} } ) {
-            $service_by_account_yesterday{$account_id}{$service} = 0;
-        }
-        next;
-    }
-    my $account_name = $config->{aws}{accounts}{$account_id};
-    if ( !defined $account_name ) {
-
-        # Arbitrary service entry that will not be displayed so it isn't undef
-        $service_by_account_yesterday{$account_id}{"_"} = 0;
-        warn
-            "unknown account $account_id: add it to config.pl, skipping diff";
-        next;
-    }
-    my $stmt = $db->prepare(
-        "SELECT data_tally, s3_tally, support_dev_tally,
-        route53_tally, datapipeline_tally, awskms_tally, simpledb_tally,
-        cloudwatch_tally, cloudtrail_tally, queueservice_tally,
-        notification_tally, lambda_tally, registrar_tally, ec2_total,
-        amazonapigateway_tally, amazondynamodb_tally, amazoneks_tally,
-        amazones_tally, amazonrds_tally, amazonstates_tally, amazonvpc_tally,
-        awssecretsmanager_tally, cloudfront_tally, guardduty_tally,
-        awsconfig_tally, costexplorer_tally, support_bus_tally, xray_tally,
-        awsglue_tally, unknown_tally FROM \`$account_name\` WHERE report_date = ?"
-    );
-    $stmt->execute($yesterday_mysqlformat);
-    $stmt->bind_columns(
-        map { \$service_by_account_yesterday{$account_id}{$_} } @SERVICES );
-    if ( $stmt->rows == 0 ) {
-        $missing = 1;
-
-        # Arbitrary service entry that will not be displayed so it isn't undef
-        $service_by_account_yesterday{$account_id}{"_"} = 0;
-        warn "could not find historical data for account $account_id";
-    }
-    while ( $stmt->fetchrow_arrayref ) { }
-}
-
-# === Insert new aggregate data into database ===
-my $exists            = 0;
-my $today_mysqlformat = localtime->strftime("%Y-%m-%d");
-if ( defined $ENV{REPORT_DATE} ) {
-    chomp( $today_mysqlformat =
-            `/usr/bin/date -d '$ENV{REPORT_DATE}' +"%Y-%m-%d"` );
-}
-for my $account_id ( keys %service_by_account ) {
-    my $account_name = $config->{aws}{accounts}{$account_id};
-    if ( !defined $account_name ) {
-        warn "unknown account $account_id: add it to config.pl";
-        next;
-    }
-    $service_by_account{$account_id}{"Unknown Services"} = 0;
-outer:
-    foreach my $service ( keys %{ $service_by_account{$account_id} } ) {
-
-        # Sum services not tracked in database into "Unknown Services"
-        foreach my $service_ (@SERVICES) {
-            next outer if $service_ eq $service;
-        }
-        my $service_amount = $service_by_account{$account_id}{$service};
-        if ( defined $service_amount ) {
-            $service_by_account{$account_id}{"Unknown Services"}
-                += $service_amount;
-        }
-    }
-    my $stmt = $db->prepare(
-        "SELECT report_date FROM \`$account_name\` WHERE report_date = ?");
-    $stmt->execute($today_mysqlformat);
-    if ( $stmt->rows == 0 ) {
-
-        # Data is not there yet for today, let's put it in there!
-        my $ins = $db->prepare(
-            "INSERT INTO \`$account_name\` (report_date,
-            data_tally, s3_tally, support_dev_tally, route53_tally,
-            datapipeline_tally, awskms_tally, simpledb_tally,
-            cloudwatch_tally, cloudtrail_tally, queueservice_tally,
-            notification_tally, lambda_tally, registrar_tally, ec2_total,
-            amazonapigateway_tally, amazondynamodb_tally, amazoneks_tally,
-            amazones_tally, amazonrds_tally, amazonstates_tally,
-            amazonvpc_tally, awssecretsmanager_tally, cloudfront_tally,
-            guardduty_tally, awsconfig_tally, costexplorer_tally,
-            support_bus_tally, xray_tally, awsglue_tally, unknown_tally,
-            grand_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        );
-        $ins->execute(
-            $today_mysqlformat,
-            $service_by_account{$account_id}{'AWS Data Transfer'},
-            $service_by_account{$account_id}{'Amazon Simple Storage Service'},
-            $service_by_account{$account_id}{'AWS Support (Developer)'},
-            $service_by_account{$account_id}{'Amazon Route 53'},
-            $service_by_account{$account_id}{'Amazon Data Pipeline'},
-            $service_by_account{$account_id}{'AWS Key Management Service'},
-            $service_by_account{$account_id}{'Amazon SimpleDB'},
-            $service_by_account{$account_id}{'AmazonCloudWatch'},
-            $service_by_account{$account_id}{'AWS CloudTrail'},
-            $service_by_account{$account_id}{'Amazon Simple Queue Service'},
-            $service_by_account{$account_id}
-                {'Amazon Simple Notification Service'},
-            $service_by_account{$account_id}{'AWS Lambda'},
-            $service_by_account{$account_id}{'Amazon Registrar'},
-            $service_by_account{$account_id}{'Amazon Elastic Compute Cloud'},
-            $service_by_account{$account_id}{'Amazon API Gateway'},
-            $service_by_account{$account_id}{'Amazon DynamoDB'},
-            $service_by_account{$account_id}
-                {'Amazon Elastic Container Service for Kubernetes'},
-            $service_by_account{$account_id}{'Amazon Elasticsearch Service'},
-            $service_by_account{$account_id}
-                {'Amazon Relational Database Service'},
-            $service_by_account{$account_id}{'AWS Step Functions'},
-            $service_by_account{$account_id}{'Amazon Virtual Private Cloud'},
-            $service_by_account{$account_id}{'AWS Secrets Manager'},
-            $service_by_account{$account_id}{'Amazon CloudFront'},
-            $service_by_account{$account_id}{'Amazon GuardDuty'},
-            $service_by_account{$account_id}{'AWS Config'},
-            $service_by_account{$account_id}{'Amazon Cost Explorer Service'},
-            $service_by_account{$account_id}{'Amazon Business Support'},
-            $service_by_account{$account_id}{'Amazon X-Ray Service'},
-            $service_by_account{$account_id}{'AWS Glue'},
-            $service_by_account{$account_id}{'Unknown Services'},
-            sum values %{ $service_by_account{$account_id} }
-        );
-    }
-    else {
-        # Data already exists in the database. Uh oh.
-        $exists = 1;
-    }
-}
 
 my $warning_threshold =
     defined ${config}->{report}{warning_threshold}
@@ -378,11 +197,7 @@ my $local_email_draft_path = File::Spec->catfile( $workdir, 'mailtmp.txt' );
 open my $MAIL, '>:encoding(utf8)', $local_email_draft_path
     or die "$local_email_draft_path: $!, stopped";
 my $current_day = localtime->strftime("%B %d, %Y");
-if ( defined $ENV{REPORT_DATE} ) {
-    chomp( $current_day =
-            `/usr/bin/date -d '$ENV{REPORT_DATE}' +"%B %d, %Y"` );
-}
-my $subject = "AWS Report for $current_day";
+my $subject     = "AWS Report for $current_day";
 
 # Styles are custom and cherry-picked from pure-css 1.0.1
 # For styles to show in gmail, they must be in <head> and not <body>
@@ -441,28 +256,6 @@ Subject: $subject
 </head>
 <body>
 Amazon Web Services report for $current_day<br>
-"
-    . (
-    $is_first_day
-    ? "It's the first of the month, so all tallies are reset!<br>"
-    : ""
-    )
-    . "
-"
-    . (
-    $missing
-    ? "Couldn't find historical data for some accounts. Affected diffs are marked as N/A.<br>"
-    : ""
-    )
-    . "
-"
-    . (
-    $exists
-    ? "There was a problem storing historical data for some accounts. Data may be stale.<br>"
-    : ""
-    )
-    . "
-
 <h2>Totals by account</h2>
 <table>
     <thead>
