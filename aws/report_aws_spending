@@ -23,7 +23,14 @@ die "Error parsing config file: $@" if $@;
 die "Error reading config file: $!" unless defined $config;
 
 # === Calculate dates (...is this now?) ===
-my $report_date     = defined $ARGV[1] ? $ARGV[1] : localtime->ymd;
+my $report_date;
+if ( defined $ARGV[1] ) {
+    $report_date = $ARGV[1];
+}
+else {
+    # Billing data lags by one day, so generate yesterday's report by default
+    $report_date = ( localtime() - ONE_DAY )->ymd;
+}
 my $report_date_obj = localtime->strptime( $report_date, '%Y-%m-%d' );
 my $this_month      = $report_date_obj->strftime('%Y%m01');
 my $next_month      = ( $report_date_obj + ONE_MONTH )->strftime('%Y%m01');
