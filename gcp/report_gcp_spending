@@ -2,13 +2,13 @@
 # Written by Erich Weiler
 # Get Google Cloud Platform Daily costs and report via email to users
 # This must run via cron each day at 9:00am PST or later
-
 use strict;
 use warnings;
-
-use Text::CSV;
-use DBI;
 use File::Spec::Functions 'catfile';
+use List::Util 'sum';
+use Text::CSV;
+use Time::Piece;
+use Time::Seconds;
 
 chdir('/root/gcp-reporting');
 
@@ -17,109 +17,32 @@ my $config = do "./config.pl";
 die "Error parsing config file: $@" if $@;
 die "Error reading config file: $!" unless defined $config;
 
-# Initialize database connection
-my $connect = DBI->connect(
-    "DBI:mysql:database=$config->{db}{database};host=$config->{db}{host}",
-    $config->{db}{user},
-    $config->{db}{pass},
-    { RaiseError => 1 }
-);
-
-# Initialize date variables
-
-chomp( my $current_day       = `/usr/bin/date +\"\%B \%d, \%Y\"` );
-chomp( my $today             = `/usr/bin/date +\"\%-d\"` );
-chomp( my $yesterday         = `/usr/bin/date +\"\%-d\" --date=\"-1 day\"` );
-chomp( my $month             = `/usr/bin/date +\"\%m\"` );
-chomp( my $last_month        = `/usr/bin/date +\"\%m\" --date=\"-1 month\"` );
-chomp( my $year              = `/usr/bin/date +\"\%Y\"` );
-chomp( my $last_year         = `/usr/bin/date +\"\%Y\" --date=\"-1 year\"` );
-chomp( my $today_mysqlformat = `/usr/bin/date +\"%Y-\%m-\%d\"` );
-chomp( my $yesterday_mysqlformat =
-        `/usr/bin/date +\"%Y-\%m-\%d\" --date=\"-1 day\"` );
-
-if ( defined $ENV{REPORT_DATE} ) {
-    chomp( $current_day =
-            `/usr/bin/date -d '$ENV{REPORT_DATE}' +\"\%B \%d, \%Y\"` );
-    chomp( $today = `/usr/bin/date -d '$ENV{REPORT_DATE}' +\"\%-d\"` );
-    chomp( $yesterday =
-            `/usr/bin/date +\"\%-d\" --date=\"$ENV{REPORT_DATE} - 1 day\"` );
-    chomp( $month = `/usr/bin/date -d '$ENV{REPORT_DATE}' +\"\%m\"` );
-    chomp( $last_month =
-            `/usr/bin/date +\"\%m\" --date=\"$ENV{REPORT_DATE} - 1 month\"` );
-    chomp( $year = `/usr/bin/date -d '$ENV{REPORT_DATE}' +\"\%Y\"` );
-    chomp( $last_year =
-            `/usr/bin/date +\"\%Y\" --date=\"$ENV{REPORT_DATE} - 1 year\"` );
-    chomp( $today_mysqlformat =
-            `/usr/bin/date -d '$ENV{REPORT_DATE}' +\"%Y-\%m-\%d\"` );
-    chomp( $yesterday_mysqlformat =
-            `/usr/bin/date +\"%Y-\%m-\%d\" --date=\"$ENV{REPORT_DATE} -1 day\"`
-    );
-}
+# === Calculate dates (...is this now?) ===
+my $report_date =
+    defined $ARGV[0] ? $ARGV[0] : ( localtime() - ONE_DAY )->ymd;
+my $report_date_obj = localtime->strptime( $report_date, '%Y-%m-%d' );
 
 # Bucket name with billing data in it
-
 my $bucket     = $config->{gcp}{bucket};
 my $total_cost = 0;
 
-# Initialize Service Cost Hashes and Cost Differential hashes
-
-my %computeEngine;
-my %cloudStorage;
-my %logging;
-my %cloudfunctions;
-my %pubsub;
-my %total;
-my $yesterday_total = 0.00;
-
-my %computeEngine_diff;
-my %cloudStorage_diff;
-my %logging_diff;
-my %cloudfunctions_diff;
-my %pubsub_diff;
-my %total_diff;
-
-# Initialize cost differential hashes to zero
-
-foreach my $project ( @{ $config->{gcp}{projects} } ) {
-    $computeEngine_diff{$project}  = 0.00;
-    $cloudStorage_diff{$project}   = 0.00;
-    $logging_diff{$project}        = 0.00;
-    $cloudfunctions_diff{$project} = 0.00;
-    $pubsub_diff{$project}         = 0.00;
-    $total_diff{$project}          = 0.00;
-}
-
-# Support Cost tally
-
-my $supportCost = 0;
-
 # Get all GCP billing CSV files for the month so far
+# %service_by_project_today contains costs in %service_by_project
+my ( %service_by_project, %service_by_project_today );
+my $cache_dir = "/root/gcp-reporting/cache/";
+`mkdir -p $cache_dir`;
+my $first_day = localtime()->strftime('%Y-%m-01');
+my $csv_date  = Time::Piece->strptime( $first_day, '%Y-%m-%d' );
+
 # GCP only shows charges for a single day in each CSV file,
 # so we need to get them all for this month before tallying stats
-
-# Date          file_year   file_month
-# 1 Jan 2020    2019        12
-# 2 Jan 2020    2020        1
-# 1 Feb 2020    2020        1
-my $file_year  = $today == 1 && $month eq "01" ? $last_year : $year;
-my $file_month = $today > 1                    ? $month     : $last_month;
-foreach my $days ( 1 .. $yesterday ) {
-    my $padded_day = sprintf( "%02d", $days );
-    grab_csv_data("billing-report--$file_year-$file_month-$padded_day.csv");
-}
-
-# Open the CSV file and iterate through each line to grab all the data
-sub grab_csv_data {
-    my ($fname) = @_;
-    my $cache_dir = "/root/gcp-reporting/cache/";
-    `mkdir -p $cache_dir`;
+while ( $csv_date <= $report_date_obj ) {
+    my $fname             = "billing-report--" . $csv_date->ymd . ".csv";
     my $local_report_path = catfile( $cache_dir, $fname );
     unless ( -e $local_report_path ) {
         print "Getting new file $fname\n";
         `/root/google-cloud-sdk/bin/gsutil cp gs://$bucket/$fname $cache_dir`;
     }
-
     my $csv = Text::CSV->new( { binary => 1, auto_diag => 1, strict => 1 } );
     open my $report, "<:encoding(utf8)", $local_report_path
         or die "$local_report_path: $!, stopping";
@@ -128,27 +51,15 @@ sub grab_csv_data {
     $csv->bind_columns( \@{$row}{@cols} );
     while ( $csv->getline($report) ) {
         my $service = ( split( '/', $row->{'Line Item'} ) )[2];
-        if ( $service eq "compute-engine" ) {
-            $computeEngine{ $row->{'Project Name'} } += $row->{'Cost'};
-        }
-        elsif ( $service eq "cloud-storage" ) {
-            $cloudStorage{ $row->{'Project Name'} } += $row->{'Cost'};
-        }
-        elsif ( $service eq "logging" ) {
-            $logging{ $row->{'Project Name'} } += $row->{'Cost'};
-        }
-        elsif ( $service eq "cloudfunctions" ) {
-            $cloudfunctions{ $row->{'Project Name'} } += $row->{'Cost'};
-        }
-        elsif ( $service eq "pubsub" ) {
-            $pubsub{ $row->{'Project Name'} } += $row->{'Cost'};
-        }
-        elsif ( $service eq "support" ) {
-            $supportCost += $row->{'Cost'};
+        my $project = $row->{'Project Name'};
+        my $cost    = $row->{'Cost'};
+        $service_by_project{$project}->{$service} += $cost;
+        if ( $csv_date->ymd eq $report_date ) {
+            $service_by_project_today{$project}->{$service} += $cost;
         }
     }
     close $report or warn "$local_report_path $!";
-    return 1;
+    $csv_date += ONE_DAY;
 }
 
 # The cost differential subroutine
@@ -188,137 +99,11 @@ sub print_diff {
     }
 }
 
-# Set cost tallies to zero if none were incurred.
-foreach my $project ( @{ $config->{gcp}{projects} } ) {
-    if ( !( $computeEngine{$project} ) ) {
-        $computeEngine{$project} = "0.00";
-    }
-
-    if ( !( $cloudStorage{$project} ) ) {
-        $cloudStorage{$project} = "0.00";
-    }
-
-    if ( !( $logging{$project} ) ) {
-        $logging{$project} = "0.00";
-    }
-
-    if ( !( $cloudfunctions{$project} ) ) {
-        $cloudfunctions{$project} = "0.00";
-    }
-
-    if ( !( $pubsub{$project} ) ) {
-        $pubsub{$project} = "0.00";
-    }
-}
-
-# Normalize numbers to two decimal places
-
-foreach my $project ( @{ $config->{gcp}{projects} } ) {
-    $computeEngine{$project}  = sprintf( "%.2f", $computeEngine{$project} );
-    $cloudStorage{$project}   = sprintf( "%.2f", $cloudStorage{$project} );
-    $logging{$project}        = sprintf( "%.2f", $logging{$project} );
-    $cloudfunctions{$project} = sprintf( "%.2f", $cloudfunctions{$project} );
-    $pubsub{$project}         = sprintf( "%.2f", $pubsub{$project} );
-}
-$supportCost = sprintf( "%.2f", $supportCost );
-
-# Compute total costs per project
-
-foreach my $project ( @{ $config->{gcp}{projects} } ) {
-    $total{$project} =
-          $computeEngine{$project}
-        + $cloudStorage{$project}
-        + $logging{$project}
-        + $cloudfunctions{$project}
-        + $pubsub{$project};
-}
-
-# Compute grand total
-
-my $grand_total = 0.00;
-foreach my $project ( @{ $config->{gcp}{projects} } ) {
-    $grand_total = $grand_total + $total{$project};
-}
-
-# Get cost differentials from yesterday until today
-
-# Report generation lags by one day. (For example, the report for August 8 will
-# become available on August 9.) So on the second of the month, we generate the
-# email report for the first day of the month. And on the first day of the
-# month it is also the first day of the billing period, which means that the
-# Yesterday value shold be equal to the Month value
-
-foreach my $project ( @{ $config->{gcp}{projects} } ) {
-    if ( $today != 2 ) {
-        my $grab = $connect->prepare(
-            "SELECT * FROM \`$project\` WHERE report_date = ?");
-        $grab->execute($yesterday_mysqlformat);
-
-        if ( $grab->rows > 0 ) {
-            while ( my @data = $grab->fetchrow_array() ) {
-                $computeEngine_diff{$project} =
-                    ( $computeEngine{$project} - $data[1] );
-                $pubsub_diff{$project} = ( $pubsub{"$project"} - $data[2] );
-                $cloudfunctions_diff{$project} =
-                    ( $cloudfunctions{$project} - $data[3] );
-                $logging_diff{$project} = ( $logging{$project} - $data[4] );
-                $cloudStorage_diff{$project} =
-                    ( $cloudStorage{$project} - $data[5] );
-                $total_diff{$project} = ( $total{$project} - $data[6] );
-                $yesterday_total += $total_diff{$project};
-            }
-        }
-        else {
-            $total_diff{$project} = "";    # N/A
-        }
-    }
-    else {
-        $computeEngine_diff{$project}  = $computeEngine{$project};
-        $pubsub_diff{$project}         = $pubsub{$project};
-        $cloudfunctions_diff{$project} = $cloudfunctions{$project};
-        $logging_diff{$project}        = $logging{$project};
-        $cloudStorage_diff{$project}   = $cloudStorage{$project};
-        $total_diff{$project}          = $total{$project};
-        $yesterday_total += $total_diff{$project};
-    }
-}
-
-# Populate the gcp_reporting database with today's dollar amounts
-
-foreach my $project ( @{ $config->{gcp}{projects} } ) {
-    my $sum;
-    my $compute   = $computeEngine{$project};
-    my $storage   = $cloudStorage{$project};
-    my $logs      = $logging{$project};
-    my $functions = $cloudfunctions{$project};
-    my $pubs      = $pubsub{$project};
-    $sum = $total{$project};
-
-    my $grab =
-        $connect->prepare("SELECT * FROM \`$project\` WHERE report_date = ?");
-    $grab->execute($today_mysqlformat);
-
-    if ( $grab->rows == 0 ) {
-
-        # Data is not there yet for today, let's put it in there!
-        my $stmt = $connect->prepare(
-            "INSERT INTO \`$project\` (report_date, compute_engine_tally,
-            pubsub_tally, cloudfunctions_tally, logging_tally,
-            cloud_storage_tally, grand_total) VALUES (?, ?, ?, ?, ?, ?, ?);"
-        );
-        $stmt->execute( $today_mysqlformat, $compute,
-            $pubs, $functions, $logs, $storage, $sum );
-    }
-    else {
-# print $MAILSEND "\nSkipping DB entry for $project - today's data already exists.\n";
-    }
-}
-
 my $report = "Mime-Version: 1.0
 Content-Type: text/html; charset='UTF-8'
 To: " . join( ',', @{ $config->{report}{recipients} } ) . "
 From: $config->{report}{from}
-Subject: GCP Report for $current_day
+Subject: GCP Report for " . $report_date_obj->strftime('%B %d, %Y') . "
 
 <!doctype html>
 <html lang='en'>
@@ -369,13 +154,10 @@ Subject: GCP Report for $current_day
 </head>
 <body>
 
-Google Cloud Platform Report for $current_day";
-if ( $today eq "01" ) {
-    $report
-        .= "Yesterday was the first day of the billing period, so all tallies are reset!\n\n";
-}
+Google Cloud Platform Report for "
+    . $report_date_obj->strftime('%A, %d %B %Y') . "
 
-$report .= "<h2>Totals by project</h2>
+<h2>Totals by project</h2>
 <table>
 	<thead>
 		<tr>
@@ -386,39 +168,41 @@ $report .= "<h2>Totals by project</h2>
 	</thead>
 	<tbody>";
 
+my $grand_total       = 0;
+my $today_grand_total = 0;
 foreach my $project ( sort @{ $config->{gcp}{projects} } ) {
+    my $total       = sum values %{ $service_by_project{$project} };
+    my $today_total = sum values %{ $service_by_project_today{$project} };
+    $grand_total       += $total;
+    $today_grand_total += $today_total;
     $report .= "
 		<tr>
-			<td><a href=\"#$project\">$project</a></td>
-			<td>\$" . sprintf( "%.2f", $total{$project} ) . "</td>
-			<td>" . print_diff( $total_diff{$project} ) . "</td>
+			<td><a href='#$project'>$project</a></td>
+			<td>" . sprintf( '$%.2f', $total ) . "</td>
+			<td>" . print_diff($today_total) . "</td>
 		</tr>";
 }
 $report .= "
 		<tr>
 			<td>(support contract)</td>
-			<td>\$" . sprintf( "%.2f", $supportCost ) . "</td>
-			<td>--</td>
+			<td>\$" . sprintf( "%.2f", $service_by_project{''}{support} ) . "</td>
+			<td></td>
 		</tr>
 	</tbody>
 	<tfoot>
 		<tr>
 			<td>Grand Total</td>
-			<td>\$" . sprintf($grand_total) . "</td>
-			<td>" . print_diff( $yesterday_total, 1 ) . "</td>
+			<td>\$" . sprintf( "%.2f", $grand_total ) . "</td>
+			<td>" . print_diff( $today_grand_total, 1 ) . "</td>
 		</tr>
 	</tfoot>
 </table>";
 
 foreach my $project ( sort @{ $config->{gcp}{projects} } ) {
-    my $proj_total =
-          $computeEngine{"$project"}
-        + $cloudStorage{"$project"}
-        + $logging{"$project"}
-        + $cloudfunctions{"$project"}
-        + $pubsub{"$project"};
-    $report
-        .= "<a name=\"$project\" id=\"$project\"></a><h2>Report for account $project</h2>
+    my $account_total = sum values %{ $service_by_project{$project} };
+    my $account_today = sum values %{ $service_by_project_today{$project} };
+    $report .= "<a name='$project' id='$project'></a>
+<h2>Report for account $project</h2>
 <table>
 	<thead>
 		<tr>
@@ -426,39 +210,22 @@ foreach my $project ( sort @{ $config->{gcp}{projects} } ) {
 			<th>This month</th>
 			<th>Yesterday</th>
 		</tr>
-	</thead>
-	<tbody>
-		<tr>
-			<td>compute-engine</td>
-			<td>\$$computeEngine{$project}</td>
-			<td>" . print_diff( $computeEngine_diff{$project} ) . "</td>
-		</tr>
-		<tr>
-			<td>cloud-storage</td>
-			<td>\$$cloudStorage{$project}</td>
-			<td>" . print_diff( $cloudStorage_diff{$project} ) . "</td>
-		</tr>
-		<tr>
-			<td>logging</td>
-			<td>\$$logging{$project}</td>
-			<td>" . print_diff( $logging_diff{$project} ) . "</td>
-		</tr>
-		<tr>
-			<td>cloudfunctions</td>
-			<td>\$$cloudfunctions{$project}</td>
-			<td>" . print_diff( $cloudfunctions_diff{$project} ) . "</td>
-		</tr>
-		<tr>
-			<td>pubsub</td>
-			<td>\$$pubsub{$project}</td>
-			<td>" . print_diff( $pubsub_diff{$project} ) . "</td>
-		</tr>
-	</tbody>
-	<tfoot>
+	</thead>";
+    foreach my $service ( sort keys %{ $service_by_project{$project} } ) {
+        my $cost       = $service_by_project{$project}{$service};
+        my $today_cost = $service_by_project_today{$project}{$service};
+        $report .= "<tbody>
+                <tr>
+                    <td>$service</td>
+                    <td>" . sprintf( "%.2f", $cost ) . "</td>
+                    <td>" . print_diff($today_cost) . "</td>
+                </tr>";
+    }
+    $report .= "</tbody><tfoot>
 		<tr>
 			<td>Total for $project</td>
-			<td>\$" . sprintf( "%.2f", $proj_total ) . "</td>
-			<td>" . print_diff( $total_diff{$project} ) . "</td>
+			<td>" . sprintf( '$%.2f', $account_total ) . "</td>
+			<td>" . print_diff($account_today) . "</td>
 		</tr>
 	</tfoot>
 	</table>";

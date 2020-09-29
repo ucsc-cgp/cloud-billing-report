@@ -1,4 +1,2 @@
 requires 'Text::CSV', '2.00';
 requires 'Text::CSV_XS', '1.44';
-requires 'DBD::mysql', '4.050';
-requires 'DBI', '1.643';

@@ -1,8 +1,8 @@
 # GCP Billing Report
 
-Given GCP billing data stored in an GCS bucket and a MySQL database, compiles
-a report with historical expense information for a number of specified GCP
-projects and sends that report to a number of recipients.
+Given GCP billing data stored in an GCS bucket, compiles a report with
+historical expense information for a number of specified GCP projects and sends
+that report to specified recipients.
 
 You can install dependencies with
 
@@ -21,27 +21,21 @@ self-explanatory.
 
 ## Development
 
-To run this script locally, you'll need a few things:
-* A `mysqldump` of the database that stores historical spend information (that
-  this script accesses). If you don't have this, it may be sufficient to create
-  a table for each account in `accounts.csv`. Store this file in a subdirectory
-  named `db/`; `docker-compose` will automatically populate the database with
-  this data.
-* GCP keys with access to billing data in GCS. You'll need to install the
-  Google Cloud SDK (`brew cask install google-cloud-sdk` or something like
-  that) and then do `gcloud auth login`.
-* `docker-compose`
+To run this script locally, you'll need Docker and access to billing data in
+GCS. You'll need to install the Google Cloud SDK (`brew cask install
+google-cloud-sdk` or something like that) then do `gcloud auth login`.
 
 Then:
 
-    $ docker-compose up --abort-on-container-exit --build
+    $ docker build -t report_gcp .
+    $ docker run \
+        -v (pwd)/report.html:/root/gcp-reporting/report.html \
+        -v ~/.config/gcloud/:/root/.config/gcloud/:ro \
+        -v (pwd)/cache/:/root/gcp-reporting/cache/ \
+        report_gcp
 
-will run the script. When run in this fashion, it will write the generated
-report to `report.html` instead of sending it to recipients. (You can control
-this by setting the `REPORT_DEBUG` environment variable.)
-
-You can generate a report for a certain date by setting the `REPORT_DATE`
-environment variable.
+. You can optionally specify a YYYY-MM-DD as an argument to generate a past
+report.
 
 ### Without docker-compose
 
