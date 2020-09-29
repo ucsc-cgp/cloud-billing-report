@@ -89,17 +89,13 @@ gunzip $local_archive_path => $local_report_path
     or die "$local_archive_path: $GunzipError, stopped";
 
 # === Parse CSV ===
-# The report is parsed into three primary structures:
-my %service_by_account;
-my %service_by_account_yesterday;
-
 # my %service_by_account = {
 #     12345678 => {
 #         "AWS Simple Storage Service" => 0.12343,
 #         "AWS Key Management Service" => 1.5324,
 #     }
 # }
-my %ec2_owner_by_account;
+my ( %service_by_account, %service_by_account_today );
 
 # my %ec2_owner_by_account = {
 #     12345678 => {
@@ -107,12 +103,13 @@ my %ec2_owner_by_account;
 #         "owner2@example.com" => 0.013,
 #     }
 # }
-my %ec2_by_name;
+my %ec2_owner_by_account;
 
 # my %ec2_by_name = {
 #     "my-name-tag" => 82.666,
 #     "(untagged)" => 393933.21,
 # }
+my %ec2_by_name;
 
 my $csv = Text::CSV->new( { binary => 1, auto_diag => 1, strict => 1 } );
 open my $report, "<:encoding(utf8)", $local_report_path
@@ -129,7 +126,8 @@ while ( $csv->getline($report) ) {
     # First 10 chars of ISO8601 datetime is the date, which we can lex sort
 
     if ( $date eq $report_date ) {
-        $service_by_account{$account_id}->{$service} += $amount;
+        $service_by_account_today{$account_id}->{$service} += $amount;
+        $service_by_account{$account_id}->{$service}       += $amount;
         if ( $service eq "Amazon Elastic Compute Cloud" ) {
             my $owner = $row->{"resourceTags/user:Owner"};
             my $name  = $row->{"resourceTags/user:Name"};
@@ -148,8 +146,7 @@ while ( $csv->getline($report) ) {
         }
     }
     elsif ( $date lt $report_date ) {
-        $service_by_account{$account_id}->{$service}           += $amount;
-        $service_by_account_yesterday{$account_id}->{$service} += $amount;
+        $service_by_account{$account_id}->{$service} += $amount;
     }
 }
 close $report or warn "$local_report_path: $!";
@@ -160,38 +157,30 @@ my $warning_threshold =
     : -1;
 
 # print_diff(amount) to print an amount, with highlighting if amount is large
-# print_diff(amount, warnflag) to  print an amount, without highlighting
+# print_diff(amount, warnflag) to print an amount, without highlighting
 sub print_diff {
     my ( $amount, $nowarn ) = @_;
     my $warn = $warning_threshold > 0 && !defined $nowarn;
 
-   # Some services do not have history stored because of the current db schema
-   # and will be passed to `print_diff` as undef
     if ( not( defined $amount ) or $amount eq "" ) {
-        return "N/A";
+        return "";
 
-        # Ignore sufficiently small amounts
     }
-    elsif ( $warn and $amount > $warning_threshold ) {
-        return sprintf( "<span class='unusual'>\$%.2f</span>", $amount );
+    if ( $warn and $amount > $warning_threshold ) {
+        return sprintf( '<span class="unusual">$%.2f</span>', $amount );
     }
+
+    # Ignore sufficiently small amounts
     elsif ( $amount > 0.01 ) {
-        return sprintf( "\$%.2f", $amount );
+        return sprintf( '$%.2f', $amount );
     }
     elsif ( $amount < -0.01 ) {
 
         # A negative value is unlikely but possible in the event of, for
         # example, a credit from AWS
-        my $absolute = sprintf( "-\$%.2f", abs($amount) );
+        my $absolute = sprintf( '-$%.2f', abs($amount) );
         return "<span class='unusual'>$absolute</span>";
     }
-    else {
-        return "";
-    }
-}
-
-sub sum_undef {
-    return sum( grep( defined, @_ ) );
 }
 
 # === Generate email ===
@@ -276,15 +265,15 @@ $subject<br>
         </tr>
     </thead>
     <tbody>";
-my $all_accounts_total           = 0;
-my $all_accounts_total_yesterday = 0;
+my $all_accounts_total = 0;
+my $all_accounts_today = 0;
 
 foreach my $account_id (@accounts_sorted) {
     my $account_total = sum values %{ $service_by_account{$account_id} };
-    my $account_total_yesterday =
-        sum_undef( values %{ $service_by_account_yesterday{$account_id} } );
-    $all_accounts_total           += $account_total;
-    $all_accounts_total_yesterday += $account_total_yesterday;
+    my $account_today =
+        sum values %{ $service_by_account_today{$account_id} };
+    $all_accounts_total += defined $account_total ? $account_total : 0;
+    $all_accounts_today += defined $account_today ? $account_today : 0;
     my $account_name = $config->{aws}{accounts}{$account_id};
     if ( !defined $account_name ) {
         $account_name = "(unconfigured account)";
@@ -292,9 +281,8 @@ foreach my $account_id (@accounts_sorted) {
     print $MAIL "\
         <tr>
             <td><a href='#$account_name'>$account_name</a></td>
-            <td>" . sprintf( "\$%.2f", $account_total ) . "</td>
-            <td>"
-        . print_diff( $account_total - $account_total_yesterday ) . "</td>
+            <td>" . sprintf( '$%.2f', $account_total ) . "</td>
+            <td>" . print_diff($account_today) . "</td>
         </tr>";
 }
 print $MAIL "\
@@ -302,10 +290,9 @@ print $MAIL "\
     <tfoot>
         <tr>
             <td>Grand total</td>
-            <td>" . sprintf( "\$%.2f", $all_accounts_total ) . "</td>
+            <td>" . sprintf( '$%.2f', $all_accounts_total ) . "</td>
             <td>"
-    . print_diff( $all_accounts_total - $all_accounts_total_yesterday, 1 )
-    . "</td>
+    . print_diff( $all_accounts_today, 1 ) . "</td>
         </tr>
     </tfoot>
 </table>";
@@ -329,10 +316,8 @@ foreach my $account_id (@accounts_sorted) {
 
     my $ec2_total =
         $service_by_account{$account_id}{"Amazon Elastic Compute Cloud"};
-    my $ec2_total_yesterday = $service_by_account_yesterday{$account_id}
+    my $ec2_total_today = $service_by_account_today{$account_id}
         {"Amazon Elastic Compute Cloud"};
-    my $ec2_diff =
-        defined $ec2_total_yesterday ? $ec2_total - $ec2_total_yesterday : "";
     if ( defined $ec2_total ) {
         print $MAIL "\
         <table>
@@ -347,7 +332,7 @@ foreach my $account_id (@accounts_sorted) {
         foreach
             my $owner ( sort keys %{ $ec2_owner_by_account{$account_id} } )
         {
-            my $amount = sprintf( "\$%.2f",
+            my $amount = sprintf( '$%.2f',
                 $ec2_owner_by_account{$account_id}{$owner} );
             print $MAIL "<tr><td>$owner</td><td>$amount</td></tr>\n";
         }
@@ -356,8 +341,8 @@ foreach my $account_id (@accounts_sorted) {
             <tfoot>
                 <tr>
                     <td>Grand total</td>
-                    <td>\$" . sprintf( "%.2f", $ec2_total ) . "
-                    <br>(" . print_diff($ec2_diff) . ")</td>
+                    <td>" . sprintf( '$%.2f', $ec2_total ) . "
+                    <br>(" . print_diff($ec2_total_today) . ")</td>
                 </tr>
             </tfoot>
         </table>
@@ -376,31 +361,27 @@ foreach my $account_id (@accounts_sorted) {
 
 service:
     foreach my $service ( sort keys %{ $service_by_account{$account_id} } ) {
-        my $cost_today = $service_by_account{$account_id}{$service};
-        my $cost_yesterday =
-            $service_by_account_yesterday{$account_id}{$service};
-        my $diff =
-            defined $cost_yesterday ? $cost_today - $cost_yesterday : "";
-        next service if ( $cost_today < 0.01 );
+        my $cost       = $service_by_account{$account_id}{$service};
+        my $cost_today = $service_by_account_today{$account_id}{$service};
+        next service if ( $cost < 0.01 );
         print $MAIL "
             <tr>
                 <td>$service</td>
-                <td>" . sprintf( "\$%.2f", $cost_today ) . "</td>
-                <td>" . print_diff($diff) . "</td>
+                <td>" . sprintf( '$%.2f', $cost ) . "</td>
+                <td>" . print_diff($cost_today) . "</td>
             </tr>";
     }
 
     my $account_total = sum values %{ $service_by_account{$account_id} };
-    my $account_total_yesterday =
-        sum_undef( values %{ $service_by_account_yesterday{$account_id} } );
-    my $diff = $account_total - $account_total_yesterday;
+    my $account_total_today =
+        sum values %{ $service_by_account_today{$account_id} };
     print $MAIL "
         </tbody>
         <tfoot>
             <tr>
                 <td>Grand total</td>
-                <td>" . sprintf( "\$%.2f", $account_total ) . "</td>
-                <td>" . print_diff($diff) . "</td>
+                <td>" . sprintf( '$%.2f', $account_total ) . "</td>
+                <td>" . print_diff($account_total_today) . "</td>
             </tr>
         </tfoot>
     </table>";
@@ -416,7 +397,7 @@ print $MAIL '<h2>Project-based accounting based on the "Name" tag</h2>
     </thead>
     <tbody>';
 foreach my $owner ( sort keys %ec2_by_name ) {
-    my $amount = sprintf( "\$%.2f", $ec2_by_name{$owner} );
+    my $amount = sprintf( '$%.2f', $ec2_by_name{$owner} );
 
     # It's important that we add a newline at the end here; Gmail (or maybe
     # SMTP, it's unclear to me) will automatically split lines that are too
