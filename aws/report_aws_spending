@@ -249,7 +249,8 @@ Subject: $subject
     </style>
 </head>
 <body>
-$subject<br>
+Amazon Web Services Report for "
+    . $report_date_obj->strftime('%A, %d %B %Y') . "<br>
 <h2>Totals by account</h2>
 <table>
     <thead>
