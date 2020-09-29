@@ -53,6 +53,9 @@ while ( $csv_date <= $report_date_obj ) {
         my $service = ( split( '/', $row->{'Line Item'} ) )[2];
         my $project = $row->{'Project Name'};
         my $cost    = $row->{'Cost'};
+        if ( $project eq '' ) {
+            $project = '(none)';
+        }
         $service_by_project{$project}->{$service} += $cost;
         if ( $csv_date->ymd eq $report_date ) {
             $service_by_project_today{$project}->{$service} += $cost;
@@ -170,11 +173,11 @@ Google Cloud Platform Report for "
 
 my $grand_total       = 0;
 my $today_grand_total = 0;
-foreach my $project ( sort @{ $config->{gcp}{projects} } ) {
+foreach my $project ( sort keys %service_by_project ) {
     my $total       = sum values %{ $service_by_project{$project} };
     my $today_total = sum values %{ $service_by_project_today{$project} };
-    $grand_total       += $total;
-    $today_grand_total += $today_total;
+    $grand_total       += defined $total       ? $total       : 0;
+    $today_grand_total += defined $today_total ? $today_total : 0;
     $report .= "
 		<tr>
 			<td><a href='#$project'>$project</a></td>
@@ -183,11 +186,6 @@ foreach my $project ( sort @{ $config->{gcp}{projects} } ) {
 		</tr>";
 }
 $report .= "
-		<tr>
-			<td>(support contract)</td>
-			<td>\$" . sprintf( "%.2f", $service_by_project{''}{support} ) . "</td>
-			<td></td>
-		</tr>
 	</tbody>
 	<tfoot>
 		<tr>
@@ -198,7 +196,7 @@ $report .= "
 	</tfoot>
 </table>";
 
-foreach my $project ( sort @{ $config->{gcp}{projects} } ) {
+foreach my $project ( sort keys %service_by_project ) {
     my $account_total = sum values %{ $service_by_project{$project} };
     my $account_today = sum values %{ $service_by_project_today{$project} };
     $report .= "<a name='$project' id='$project'></a>

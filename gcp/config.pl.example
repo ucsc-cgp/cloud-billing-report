@@ -2,10 +2,6 @@
 {
     gcp => {
         bucket => 'bucket-name',
-        projects => [
-            'project-name-1',
-            'project-name-2',
-        ]
     },
     report => {
         # Highlight diffs over this dollar amount
