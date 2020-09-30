@@ -7,6 +7,20 @@ This repository was previously named ucsc-cgp/aws-billing-report. It was
 renamed ucsc-cgp/cloud-billing-report to accomodate reporting scripts for both
 AWS and GCP.
 
+## Development
+
+Generating reports locally is easiest with Docker, which is helpful in avoiding
+dependency purgatory:
+
+```console
+$ make -C aws report   # Deposits report in aws/report.eml
+$ make -C gcp report   # Same as above, but gcp/report.eml
+$ make -C aws send     # If sendmail is configured, generate aws/report.eml then
+                       # send
+$ REPORT_DATE=YYYY-MM-DD make -C aws send    # Reports for past dates
+$ REPORT_DATE=YYYY-MM-DD make -C gcp report  # This works, too!
+```
+
 ## Housekeeping
 
 ### Commits

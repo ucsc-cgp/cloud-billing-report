@@ -1,0 +1,15 @@
+include ../common.mk
+
+REPORT_DATE ?= $(shell gdate -d 'today - 3 days' '+%Y-%m-%d')
+
+.PHONY: build
+build:
+	docker build -t report_gcp .
+
+report.eml: build
+	docker run \
+		-v $(shell pwd)/report.eml:/root/gcp-reporting/report.html \
+		-v ~/.config/gcloud/:/root/.config/gcloud/:ro \
+		-v $(shell pwd)/cache/:/root/gcp-reporting/cache/ \
+		report_gcp ${REPORT_DATE}
+

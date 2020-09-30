@@ -16,28 +16,11 @@ and run the script with
 ## Configuration
 
 Copy `config.pl.example` to `config.pl`. The fields are more or less
-self-explanatory.
+self-explanatory. You'll need access to billing data in GCS. You can configure
+access by installing the Google Cloud SDK (`brew cask install google-cloud-sdk`,
+or something like that) then doing `gcloud auth login`.
 
-
-## Development
-
-To run this script locally, you'll need Docker and access to billing data in
-GCS. You'll need to install the Google Cloud SDK (`brew cask install
-google-cloud-sdk` or something like that) then do `gcloud auth login`.
-
-Then:
-
-    $ docker build -t report_gcp .
-    $ docker run \
-        -v (pwd)/report.html:/root/gcp-reporting/report.html \
-        -v ~/.config/gcloud/:/root/.config/gcloud/:ro \
-        -v (pwd)/cache/:/root/gcp-reporting/cache/ \
-        report_gcp
-
-. You can optionally specify a YYYY-MM-DD as an argument to generate a past
-report.
-
-### Without docker-compose
+### Without Docker
 
 If you're installing without using Docker, you can install dependencies with
 
