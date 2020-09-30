@@ -40,8 +40,7 @@ while ( $csv_date <= $report_date_obj ) {
     my $fname             = "billing-report--" . $csv_date->ymd . ".csv";
     my $local_report_path = catfile( $cache_dir, $fname );
     unless ( -e $local_report_path ) {
-        print "Getting new file $fname\n";
-        `/root/google-cloud-sdk/bin/gsutil cp gs://$bucket/$fname $cache_dir`;
+        `/root/google-cloud-sdk/bin/gsutil -q cp gs://$bucket/$fname $cache_dir`;
     }
     my $csv = Text::CSV->new( { binary => 1, auto_diag => 1, strict => 1 } );
     open my $report, "<:encoding(utf8)", $local_report_path
