@@ -16,5 +16,4 @@ RUN cpanm --installdeps .
 # Install script and config
 COPY report_gcp_spending /root/gcp-reporting/
 
-ENV REPORT_DEBUG True
 ENTRYPOINT ["perl", "report_gcp_spending"]

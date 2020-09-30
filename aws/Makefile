@@ -6,6 +6,5 @@ build:
 
 report.eml: build
 	docker run \
-		-v $(shell pwd)/report.eml:/root/aws-reporting/report.html \
 		-v $(shell pwd)/config.pl:/root/aws-reporting/config.pl:ro \
-		report_aws ${REPORT_DATE}
+		report_aws ${REPORT_DATE} > report.eml

@@ -235,13 +235,5 @@ can report <a href='https://github.com/ucsc-cgp/cloud-billing-report/issues'>
 issues</a> there, too.
 </body></html>";
 
-if ( defined $ENV{REPORT_DEBUG} ) {
-    open my $local_report_html, ">", "report.html";
-    print $local_report_html $report;
-    close($local_report_html);
-}
-else {
-    open my $sendmail, "|-", "/usr/sbin/sendmail -t";
-    print $sendmail $report;
-    close($sendmail);
-}
+print $report;
+

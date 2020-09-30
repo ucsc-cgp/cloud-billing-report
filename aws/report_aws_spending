@@ -184,18 +184,13 @@ my @accounts_sorted = sort {
     lc ${config}->{aws}{accounts}{$a} cmp lc ${config}->{aws}{accounts}{$b}
 } keys %service_by_account;
 
-# Write email to disk first so that we don't send out a borked email if this
-# script fails before completion
-my $local_email_draft_path = File::Spec->catfile( $workdir, 'mailtmp.txt' );
-open my $MAIL, '>:encoding(utf8)', $local_email_draft_path
-    or die "$local_email_draft_path: $!, stopped";
 my $subject    = "AWS Report for " . $report_date_obj->strftime('%B %d, %Y');
 my $report_ymd = $report_date_obj->ymd('/');
 my $report_mth = $report_date_obj->strftime('%Y/%m');
 
 # Styles are custom and cherry-picked from pure-css 1.0.1
 # For styles to show in gmail, they must be in <head> and not <body>
-print $MAIL "Mime-Version: 1.0
+my $report_eml = "Mime-Version: 1.0
 Content-Type: text/html; charset='UTF-8'
 To: " . join( ',', @{ $config->{report}{recipients} } ) . "
 From: $config->{report}{from}
@@ -274,14 +269,14 @@ foreach my $account_id (@accounts_sorted) {
     if ( !defined $account_name ) {
         $account_name = "(unconfigured account)";
     }
-    print $MAIL "\
+    $report_eml .= "\
         <tr>
             <td><a href='#$account_name'>$account_name</a></td>
             <td>" . sprintf( '$%.2f', $account_total ) . "</td>
             <td>" . print_diff($account_today) . "</td>
         </tr>";
 }
-print $MAIL "\
+$report_eml .= "\
     </tbody>
     <tfoot>
         <tr>
@@ -307,15 +302,15 @@ foreach my $account_id (@accounts_sorted) {
     #      guidelines.
     #   4. Not documented anywhere in Google's reference for HTML content in
     #      emails.
-    print $MAIL "<a name='$account_name' id='$account_name'></a>";
-    print $MAIL "<h2>Report for account $account_name</h2>";
+    $report_eml .= "<a name='$account_name' id='$account_name'></a>
+<h2>Report for account $account_name</h2>";
 
     my $ec2_total =
         $service_by_account{$account_id}{"Amazon Elastic Compute Cloud"};
     my $ec2_total_today = $service_by_account_today{$account_id}
         {"Amazon Elastic Compute Cloud"};
     if ( defined $ec2_total ) {
-        print $MAIL "\
+        $report_eml .= "\
         <table>
             <caption>EC2 Breakdown by Owner</caption>
             <thead>
@@ -330,9 +325,9 @@ foreach my $account_id (@accounts_sorted) {
         {
             my $amount = sprintf( '$%.2f',
                 $ec2_owner_by_account{$account_id}{$owner} );
-            print $MAIL "<tr><td>$owner</td><td>$amount</td></tr>\n";
+            $report_eml .= "<tr><td>$owner</td><td>$amount</td></tr>\n";
         }
-        print $MAIL "\
+        $report_eml .= "\
             </tbody>
             <tfoot>
                 <tr>
@@ -344,7 +339,7 @@ foreach my $account_id (@accounts_sorted) {
         </table>
         <br>";
     }
-    print $MAIL "\
+    $report_eml .= "\
     <table>
         <thead>
             <tr>
@@ -360,7 +355,7 @@ service:
         my $cost       = $service_by_account{$account_id}{$service};
         my $cost_today = $service_by_account_today{$account_id}{$service};
         next service if ( $cost < 0.01 );
-        print $MAIL "
+        $report_eml .= "
             <tr>
                 <td>$service</td>
                 <td>" . sprintf( '$%.2f', $cost ) . "</td>
@@ -371,7 +366,7 @@ service:
     my $account_total = sum values %{ $service_by_account{$account_id} };
     my $account_total_today =
         sum values %{ $service_by_account_today{$account_id} };
-    print $MAIL "
+    $report_eml .= "
         </tbody>
         <tfoot>
             <tr>
@@ -383,7 +378,7 @@ service:
     </table>";
 }
 
-print $MAIL '<h2>Project-based accounting based on the "Name" tag</h2>
+$report_eml .= '<h2>Project-based accounting based on the "Name" tag</h2>
 <table>
     <thead>
         <tr>
@@ -400,9 +395,9 @@ foreach my $owner ( sort keys %ec2_by_name ) {
     # long, and we have a lot of tags. This can cause some tags to be
     # interpreted as text (i.e. content and not markup) which will bork the
     # formatting of the table. And that's not good.
-    print $MAIL "<tr><td>$owner</td><td>$amount</td></tr>\n";
+    $report_eml .= "<tr><td>$owner</td><td>$amount</td></tr>\n";
 }
-print $MAIL "
+$report_eml .= "
     </tbody>
 </table>
 <hr>
@@ -411,11 +406,7 @@ Source code for this report is available on
 can report <a href='https://github.com/ucsc-cgp/cloud-billing-report/issues'>
 issues</a> there, too.
 </body></html>";
-close $MAIL;
 
-if ( defined $ENV{"REPORT_DEBUG"} ) {
-    system "cp $local_email_draft_path report.html";
-}
-else {
-    system "/usr/sbin/sendmail -t < $local_email_draft_path";
-}
+# If we get here, report generation should have completed without error
+print $report_eml;
+
