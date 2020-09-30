@@ -14,7 +14,6 @@ COPY cpanfile /root/gcp-reporting/
 RUN cpanm --installdeps .
 
 # Install script and config
-COPY config.pl /root/gcp-reporting/
 COPY report_gcp_spending /root/gcp-reporting/
 
 ENV REPORT_DEBUG True
