@@ -1,0 +1,46 @@
+name: Docker
+
+on:
+  push:
+    tags:
+      - aws/*
+      - gcp/*
+
+jobs:
+  # Push image to GitHub Packages.
+  # See also https://docs.docker.com/docker-hub/builds/
+  push:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Get version and platform
+        run: |
+          TAG_NAME=$(echo "${{ github.ref }}" | sed -e "s/^refs\/tags\///")
+          SERVICE_NAME=$(echo ${TAG_NAME} | cut -f1 -d/)
+          echo "VERSION=$(echo ${TAG_NAME} | cut -f2 -d/)" >> $GITHUB_ENV
+          echo "IMAGE_NAME=report_${SERVICE_NAME}" >> $GITHUB_ENV
+          echo "SERVICE_NAME=${SERVICE_NAME}" >> $GITHUB_ENV
+
+      - name: Build image
+        run: make -C ${SERVICE_NAME} build
+
+      - name: Log into GitHub Container Registry
+        run: echo "${{ secrets.CR_PAT }}" | docker login https://ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Push image to GitHub Container Registry
+        run: |
+          IMAGE_ID=ghcr.io/${{ github.repository }}/$IMAGE_NAME
+
+          # Change all uppercase to lowercase
+          IMAGE_ID=$(echo $IMAGE_ID | tr '[A-Z]' '[a-z]')
+
+          echo IMAGE_ID=$IMAGE_ID
+          echo VERSION=$VERSION
+
+          docker tag $IMAGE_NAME $IMAGE_ID:$VERSION
+          docker tag $IMAGE_NAME $IMAGE_ID:latest
+          docker push $IMAGE_ID:$VERSION
+          docker push $IMAGE_ID:latest
