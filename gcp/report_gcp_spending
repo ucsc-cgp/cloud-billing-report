@@ -75,28 +75,23 @@ sub print_diff {
     my ( $amount, $nowarn ) = @_;
     my $warn = $warning_threshold > 0 && !defined $nowarn;
 
-   # Some services do not have history stored because of the current db schema
-   # and will be passed to `print_diff` as undef
     if ( not( defined $amount ) or $amount eq "" ) {
-        return "N/A";
+        return "";
 
         # Ignore sufficiently small amounts
     }
     elsif ( $warn and $amount > $warning_threshold ) {
-        return sprintf( "<span class='unusual'>\$%.2f</span>", $amount );
+        return sprintf( '<span class="unusual">$%.2f</span>', $amount );
     }
     elsif ( $amount > 0.01 ) {
-        return sprintf( "\$%.2f", $amount );
+        return sprintf( '$%.2f', $amount );
     }
     elsif ( $amount < -0.01 ) {
 
         # A negative value is unlikely but possible in the event of, for
         # example, a credit
-        my $absolute = sprintf( "-\$%.2f", abs($amount) );
+        my $absolute = sprintf( '-$%.2f', abs($amount) );
         return "<span class='unusual'>$absolute</span>";
-    }
-    else {
-        return "";
     }
 }
 
@@ -163,8 +158,8 @@ Google Cloud Platform Report for "
 	<thead>
 		<tr>
 			<th>Project name</th>
-			<th>This month</th>
-			<th>Yesterday</th>
+			<th>" . $report_date_obj->strftime('%Y/%m') . "</th>
+			<th>" . $report_date_obj->ymd('/') . "</th>
 		</tr>
 	</thead>
 	<tbody>";
@@ -188,7 +183,7 @@ $report .= "
 	<tfoot>
 		<tr>
 			<td>Grand Total</td>
-			<td>\$" . sprintf( "%.2f", $grand_total ) . "</td>
+			<td>" . sprintf( '$%.2f', $grand_total ) . "</td>
 			<td>" . print_diff( $today_grand_total, 1 ) . "</td>
 		</tr>
 	</tfoot>
@@ -203,8 +198,8 @@ foreach my $project ( sort keys %service_by_project ) {
 	<thead>
 		<tr>
 			<th>Service</th>
-			<th>This month</th>
-			<th>Yesterday</th>
+			<th>" . $report_date_obj->strftime('%Y/%m') . "</th>
+			<th>" . $report_date_obj->ymd('/') . "</th>
 		</tr>
 	</thead>";
     foreach my $service ( sort keys %{ $service_by_project{$project} } ) {
@@ -213,7 +208,7 @@ foreach my $project ( sort keys %service_by_project ) {
         $report .= "<tbody>
                 <tr>
                     <td>$service</td>
-                    <td>" . sprintf( "%.2f", $cost ) . "</td>
+                    <td>" . sprintf( '$%.2f', $cost ) . "</td>
                     <td>" . print_diff($today_cost) . "</td>
                 </tr>";
     }
