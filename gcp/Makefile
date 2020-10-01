@@ -9,7 +9,6 @@ build:
 report.eml: build
 	docker run \
 		-v ~/.config/gcloud/:/root/.config/gcloud/:ro \
-		-v $(shell pwd)/cache/:/root/gcp-reporting/cache/ \
 		-v $(shell pwd)/config.pl:/root/gcp-reporting/config.pl:ro \
 		report_gcp ${REPORT_DATE} > report.eml
 

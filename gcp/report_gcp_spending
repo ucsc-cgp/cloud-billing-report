@@ -5,6 +5,7 @@
 use strict;
 use warnings;
 use File::Spec::Functions 'catfile';
+use File::Temp;
 use List::Util 'sum';
 use Text::CSV;
 use Time::Piece;
@@ -29,8 +30,7 @@ my $total_cost = 0;
 # Get all GCP billing CSV files for the month so far
 # %service_by_project_today contains costs in %service_by_project
 my ( %service_by_project, %service_by_project_today );
-my $cache_dir = "/root/gcp-reporting/cache/";
-`mkdir -p $cache_dir`;
+my $cache_dir = File::Temp::tempdir( CLEANUP => 1 );
 my $first_day = localtime()->strftime('%Y-%m-01');
 my $csv_date  = Time::Piece->strptime( $first_day, '%Y-%m-%d' );
 
