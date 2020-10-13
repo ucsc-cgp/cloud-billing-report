@@ -1,44 +1,63 @@
 # cloud-billing-report
 
-Perl scripts that parse AWS and GCP billing data and generate an email report.
-Written by Erich Weiler.
+Summarizes AWS and GCP billing data into an email report. Originally written
+by Erich Weiler.
 
 This repository was previously named ucsc-cgp/aws-billing-report. It was
-renamed ucsc-cgp/cloud-billing-report to accomodate reporting scripts for both
-AWS and GCP.
+renamed to ucsc-cgp/cloud-billing-report.
 
-## Development
+## Getting started
 
-Generating reports locally is easiest with Docker, which is helpful in avoiding
-dependency purgatory:
+### Cloud setup
+
+Billing data is presented using
+
+* the [S3 Cost and Usage Report][s3] feature for AWS, and
+
+* the [GCS Cloud Billing][gcs] feature for GCP.
+
+Credentials configured in `config.json` must be authorized for access to
+billing data generated these features.
+
+  [s3]: https://docs.aws.amazon.com/cur/latest/userguide/cur-s3.html
+  [gcs]: https://cloud.google.com/billing/docs/how-to/export-data-file
+
+### Generating reports
+
+First, populate `config.json` and install requirements:
 
 ```console
-$ make -C aws report   # Deposits report in aws/report.eml
-$ make -C gcp report   # Same as above, but gcp/report.eml
-$ make -C aws send     # If sendmail is configured, generate aws/report.eml then
-                       # send
-$ REPORT_DATE=YYYY-MM-DD make -C aws send    # Reports for past dates
-$ REPORT_DATE=YYYY-MM-DD make -C gcp report  # This works, too!
+$ cp config.json.example config.json  # and populate it
+$ python -m venv venv
+$ source venv/bin/activate
+$ pip install -r requirements.txt
 ```
 
-## Housekeeping
+Now you can generate reports:
 
-### Commits
+```console
+$ python report.py aws  # AWS report for yesterday
+$ python report.py aws 2020-10-10  # AWS report for a given date
+$ python report.py gcp  # GCP report for yesterday
+$ python report.py gcp 2020-10-10 | /usr/sbin/sendmail -t  # etc.
+```
 
-Commit messages for work that pertains only to one report should be prefixed
-with `gcp: ` or `aws: `, a la
+Alternatively, you can build a Docker image:
 
-    gcp: Reticulate splines
+```console
+$ docker build -t report .
+```
 
-. If the commits affects both reports (or neither report) it can be left without
-a prefix. This makes it easier to identify changes between versions.
+and run it:
 
-Generally, I would take this as an indication that we need two different repos,
-but that seems like a hassle so this can stay for now.
+```console
+$ docker run --volume \
+      $(pwd)/config.json:config.json:ro \
+      report aws
 
-### Versions
-
-Scripts are not explicitly versioned, but are tagged based on when they are
-"released" to Erich for installation in format `report_type/YYYY-MM-DD`,
-e.g. `aws/2020-08-11` or `gcp/1999-01-02`.
+$ docker run --volume \
+      $(pwd)/config.json:config.json:ro \
+      ~/.config/gcloud/:/root/.config/gcloud:ro \
+      report gcp 2019-12-31
+```
 

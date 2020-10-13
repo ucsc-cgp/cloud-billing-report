@@ -1,0 +1,28 @@
+{
+    "gcp": {
+        "bucket": "bucket_name",
+        "warning_threshold": 200,
+        "from": "example@example.com",
+        "recipients": [
+            "joe@example.com",
+            "sue@example.com"
+        ]
+    },
+    "aws": {
+        "access_key": "foo",
+        "secret_key": "bar",
+        "bucket": "baz",
+        "report_name": "qux",
+        "prefix":  "qaz",
+        "accounts": {
+            "123456789012": "account-name",
+            "098787654321": "account-name-2"
+        },
+        "warning_threshold": 200,
+        "from": "example@example.com",
+        "recipients": [
+            "test@example.com",
+            "test2@example.com"
+        ]
+    }
+}

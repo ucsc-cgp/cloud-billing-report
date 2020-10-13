@@ -1,0 +1,118 @@
+{% extends '_base.html' %}
+{% set platform = 'AWS' %}
+{% block main %}
+Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
+
+<h2>Totals by account</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Account</th>
+            <th>{{ report_date|ym }}</th>
+            <th>{{ report_date|ymd }}</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for account_id, services in service_by_account.items()|sort %}
+        <tr>
+            <td><a href='#{{ account_id }}'>{{ account_id }}</a></td>
+            <td>{{ service_by_account[account_id]|sum_values|print_amount }}</td>
+            <td>{{ service_by_account_today[account_id]|sum_values|print_diff }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+    <tfoot>
+        <tr>
+            <td>Grand total</td>
+            <td>{{ service_by_account|nested_sum_values|print_amount }}</td>
+            <td>{{ service_by_account_today|nested_sum_values|print_amount }}</td>
+        </tr>
+    </tfoot>
+</table>
+
+{% for account_id, services in service_by_account.items()|sort %}
+<a name='{{ account_id }}' id='{{ account_id }}'></a>
+<h2>Report for account {{ account_id }}</h2>
+    {% if service_by_account[account_id].get('Amazon Elastic Compute Cloud') %}
+    <table>
+        <caption>EC2 Breakdown by Owner</caption>
+        <thead>
+            <tr>
+                <th>Owner</th>
+                <th>{{ report_date|ym }}</th>
+                <th>{{ report_date|ymd }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for owner, amount in ec2_owner_by_account[account_id].items()|sort %}
+            <tr>
+                <td>{{ owner }}</td>
+                <td>{{ amount|print_amount }}</td>
+                <td>{{ ec2_owner_by_account_today[account_id][owner]|print_diff }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td>Grand total</td>
+                <td>{{ ec2_owner_by_account[account_id]|sum_values|print_amount }}</td>
+                <td>{{ ec2_owner_by_account_today[account_id]|sum_values|print_diff }}</td>
+            </tr>
+        </tfoot>
+    </table>
+    <br>
+    {% endif %}
+    <table>
+        <thead>
+            <tr>
+                <th>Service</th>
+                <th>{{ report_date|ym }}</th>
+                <th>{{ report_date|ymd }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for service, amount in services.items()|sort %}
+            <tr>
+                <td>{{ service }}</td>
+                <td>{{ amount|print_amount }}</td>
+                <td>{{ service_by_account_today[account_id][service]|print_diff }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td>Grand total</td>
+                <td>{{ service_by_account|nested_sum_values|print_amount }}</td>
+                <td>{{ service_by_account_today|nested_sum_values|print_diff }}</td>
+            </tr>
+        </tfoot>
+    </table>
+{% endfor %}
+
+<h2>Project-based accounting based on the "Name" tag</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Tag</th>
+            <th>{{ report_date|ym }}</th>
+            <th>{{ report_date|ymd }}</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for name, amount in ec2_by_name.items()|sort %}
+        <tr>
+            <td>{{ name }}</td>
+            <td>{{ amount|print_amount }}</td>
+            <td>{{ ec2_by_name_today[name]|print_diff }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+    <tfoot>
+        <tr>
+            <td>Grand total</td>
+            <td>{{ ec2_by_name|sum_values|print_amount }}</td>
+            <td>{{ ec2_by_name_today|sum_values|print_amount }}</td>
+        </tr>
+    </tfoot>
+</table>
+{% endblock main %}

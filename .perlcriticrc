@@ -1,5 +1,0 @@
-severity = 5
-
-[InputOutput::RequireCheckedSyscalls]
-functions = :builtins
-exclude_functions = print

@@ -1,0 +1,62 @@
+{% extends '_base.html' %}
+{% set platform = 'GCP' %}
+{% block main %}
+    Google Cloud Platform Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
+
+    <h2>Totals by project</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>Project</th>
+            <th>{{ report_date|ym }}</th>
+            <th>{{ report_date|ymd }}</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for project_id, services in service_by_project.items()|sort %}
+            <tr>
+                <td><a href='#{{ project_id }}'>{{ project_id }}</a></td>
+                <td>{{ service_by_project[project_id]|sum_values|print_amount }}</td>
+                <td>{{ service_by_project_today[project_id]|sum_values|print_diff }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+        <tr>
+            <td>Grand total</td>
+            <td>{{ service_by_project|nested_sum_values|print_amount }}</td>
+            <td>{{ service_by_project_today|nested_sum_values|print_amount }}</td>
+        </tr>
+        </tfoot>
+    </table>
+
+    {% for project_id, services in service_by_project.items()|sort %}
+        <a name='{{ project_id }}' id='{{ project_id }}'></a>
+        <h2>Report for project {{ project_id }}</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Service</th>
+                <th>{{ report_date|ym }}</th>
+                <th>{{ report_date|ymd }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for service, amount in services.items()|sort %}
+                <tr>
+                    <td>{{ service }}</td>
+                    <td>{{ amount|print_amount }}</td>
+                    <td>{{ service_by_project_today[project_id][service]|print_diff }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+            <tfoot>
+            <tr>
+                <td>Grand total</td>
+                <td>{{ service_by_project[project_id]|sum_values|print_amount }}</td>
+                <td>{{ service_by_project_today[project_id]|sum_values|print_diff }}</td>
+            </tr>
+            </tfoot>
+        </table>
+    {% endfor %}
+{% endblock main %}

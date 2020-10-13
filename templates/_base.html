@@ -1,0 +1,62 @@
+{% extends '_base.eml' %}
+
+{% block content %}
+<!doctype html>
+<html lang='en'>
+<head>
+	<meta charset='utf-8'>
+	<style type='text/css'>
+		/* All columns except first align right */
+		td + td, th + th { text-align: right; }
+		table {
+			border-collapse: collapse;
+			border-spacing: 0;
+			empty-cells: show;
+			border: 1px solid #cbcbcb;
+		}
+		thead {
+			background-color: #e0e0e0;
+			color: #000;
+			text-align: left;
+			vertical-align: bottom;
+		}
+		th, td {
+			border-width: 0 0 1px 0;
+			border-bottom: 1px solid #cbcbcb;
+			font-size: inherit;
+			margin: 0;
+			overflow: visible;
+			padding: .5em 1em;
+		}
+		td { background-color: transparent; }
+		caption {
+			color: #000;
+			padding: 1em 0;
+			text-align: center;
+			font: italic 85%/1 arial,sans-serif;
+		}
+		body {
+			margin: 1em;
+			font-family: sans-serif;
+			-webkit-text-size-adjust: 100%;
+			ms-text-size-adjust: 100%;
+		}
+		a { background-color: transparent }
+		h1 { font-size:2em; margin:.67em 0; }
+		tbody > tr:hover, tfoot > tr:hover { background-color: #f2f2f2; }
+		tfoot { font-weight: 700; }
+		.unusual { font-weight: 700; color: red; }
+	</style>
+</head>
+<body>
+
+{% block main %}
+{% endblock %}
+
+<hr>
+Source code for this report is available on
+<a href='https://github.com/ucsc-cgp/cloud-billing-report'>GitHub</a>. You
+can report <a href='https://github.com/ucsc-cgp/cloud-billing-report/issues'>
+issues</a> there, too.
+</body></html>
+{% endblock content %}
