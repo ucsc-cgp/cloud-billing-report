@@ -13,7 +13,7 @@ from decimal import (
 )
 import gzip
 import json
-import os.path
+import os
 import tempfile
 from typing import (
     Mapping,
@@ -29,7 +29,7 @@ import jinja2
 
 
 class Config:
-    def __init__(self, platform: str, path: str = 'config.json'):
+    def __init__(self, platform: str, path: str):
         assert platform in report_types
         self._platform = platform
         with open(path, 'r') as config_json:
@@ -80,8 +80,8 @@ class Config:
         return self._config[self._platform]['accounts']
 
 
-def report_aws(report_date: datetime.date) -> str:
-    config = Config('aws')
+def report_aws(report_date: datetime.date, config_path: str) -> str:
+    config = Config('aws', path=config_path)
     s3 = boto3.client('s3',
                       aws_access_key_id=config.access_key,
                       aws_secret_access_key=config.secret_key)
@@ -149,8 +149,8 @@ def report_aws(report_date: datetime.date) -> str:
     )
 
 
-def report_gcp(report_date: datetime.date) -> str:
-    config = Config('gcp')
+def report_gcp(report_date: datetime.date, config_path: str) -> str:
+    config = Config('gcp', path=config_path)
     storage_client = storage.Client(project=None)
     bucket = storage_client.bucket(config.bucket)
     service_by_project = nested_dict()
@@ -261,7 +261,10 @@ if __name__ == '__main__':
                         default=(datetime.now() - timedelta(days=1)).strftime(date_format),
                         nargs='?',
                         help='YYYY-MM-DD to generate a report for. Defaults to yesterday.')
+    parser.add_argument('--config',
+                        default=os.path.join(os.getcwd(), 'config.json'),
+                        help='Path to config.json. Default to current directory.')
     arguments = parser.parse_args()
     date = datetime.strptime(arguments.report_date, date_format).date()
-    report = report_types[arguments.report_type](date)
+    report = report_types[arguments.report_type](date, arguments.config)
     print(report)
