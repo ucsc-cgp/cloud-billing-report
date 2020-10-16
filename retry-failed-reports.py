@@ -2,14 +2,35 @@
 Retries failed reports given a list of failed report types and dates.
 """
 import argparse
-import datetime
+from datetime import (
+    datetime,
+    timedelta,
+)
 import subprocess
+
+
+def at_least_four_days_ago(date: datetime.date) -> bool:
+    """
+    >>> from datetime import datetime, timedelta
+    >>> two_days_ago = datetime.now().date() - timedelta(days=2)
+    >>> at_least_four_days_ago(two_days_ago)
+    False
+
+    >>> four_days_ago = datetime.now().date() - timedelta(days=4)
+    >>> at_least_four_days_ago(four_days_ago)
+    True
+
+    >>> five_days_ago = datetime.now().date() - timedelta(days=5)
+    >>> at_least_four_days_ago(five_days_ago)
+    True
+    """
+    return (datetime.now().date() - timedelta(days=4)) >= date
 
 
 def aws_report(date: str) -> bytes:
     report = subprocess.run(['docker', 'run',
                              '-v', '/root/reporting/config.json:/config.json:ro',
-                             'ghcr.io/ucsc-cgp/report:latest',
+                             'ghcr.io/ucsc-cgp/cloud-billing-report:latest',
                              'aws', date],
                             check=True,
                             capture_output=True,
@@ -20,7 +41,7 @@ def aws_report(date: str) -> bytes:
 def gcp_report(date: str) -> bytes:
     report = subprocess.run(['docker', 'run',
                              '-v', '/root/reporting/config.json:/config.json:ro',
-                             'ghcr.io/ucsc-cgp/report:latest',
+                             'ghcr.io/ucsc-cgp/cloud-billing-report:latest',
                              'gcp', date],
                             check=True,
                             capture_output=True,
@@ -44,12 +65,14 @@ def main(path: str):
     still_failing = []
     for failure in set(failures):
         report_type, report_date = failure.split(',')
+        _report_date = datetime.strptime(report_date, '%Y-%m-%d')
         assert report_type in reports
-        assert datetime.datetime.strptime(report_date, '%Y-%m-%d')
         try:
             report = reports[report_type](report_date)
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as e:
             still_failing.append(failure)
+            if at_least_four_days_ago(_report_date):
+                print(e.stderr)
         else:
             subprocess.run(['/usr/sbin/sendmail', '-t'],
                            check=True,

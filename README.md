@@ -91,6 +91,6 @@ automatically retry generating those reports.
 The cron jobs look something like this:
 
 ```
-0 6 * * * (docker run -v /root/reporting/config.json:/config.json:ro ghcr.io/ucsc-cgp/report:latest aws > /tmp/aws.eml && sendmail -t < /tmp/aws.eml) || echo "aws,$(date -v-1d +%Y-%m-%d)" >> /root/reporting/fail.log
+0 6 * * * (docker run -v /root/reporting/config.json:/config.json:ro ghcr.io/ucsc-cgp/cloud-billing-report:latest aws > /tmp/aws.eml && sendmail -t < /tmp/aws.eml) || echo "aws,$(date -v-1d +%Y-%m-%d)" >> /root/reporting/fail.log
 0 19 * * * python /root/reporting/retry-failed-reports.py /root/reporting/fail.csv
 ```
