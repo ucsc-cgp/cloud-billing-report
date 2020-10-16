@@ -82,8 +82,8 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
         <tfoot>
             <tr>
                 <td>Grand total</td>
-                <td>{{ service_by_account|nested_sum_values|print_amount }}</td>
-                <td>{{ service_by_account_today|nested_sum_values|print_diff }}</td>
+                <td>{{ service_by_account[account_id]|sum_values|print_amount }}</td>
+                <td>{{ service_by_account_today[account_id]|sum_values|print_diff }}</td>
             </tr>
         </tfoot>
     </table>
