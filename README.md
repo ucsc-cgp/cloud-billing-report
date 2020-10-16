@@ -61,3 +61,36 @@ $ docker run --volume \
       report gcp 2019-12-31
 ```
 
+## Timing
+
+Billing data (on both AWS and GCP) are not provided in real time. In
+particular,
+
+* AWS billing data usually lands in S3 between 6-12 hours after the end of the
+  day. For example, billing data for the time period between 00:00 PT
+  September 15, 2020 and 23:59 PT September 15, 2020 will generally be available
+  for download by 06:00 PT September 16, 2020.
+
+* GCP billing data usually lands in GCS between 12-18 hours after the end of the
+  day. So, for example, billing data for the time period between 00:00 PT
+  September 15, 2020 and 23:59 PT September 15, 2020 will generally be available
+  for download by 17:00 PT September 16, 2020.
+
+These observations are general and not always the case. For example, at the
+beginning of the billing period (the first few days of the month), billing data
+may not be available at all.
+
+## Internal use
+
+Erich runs these reports via Docker daily; generating AWS reports at 6 AM PT and
+GCP reports at 5 PM PT. As mentioned above, this means that some reports may
+fail to generate on time, especially at the beginning of the month. To address
+this, there's some retry logic (see retry-failed-reports.py) to track and
+automatically retry generating those reports.
+
+The cron jobs look something like this:
+
+```
+0 6 * * * (docker run -v /root/reporting/config.json:/config.json:ro ghcr.io/ucsc-cgp/report:latest aws > /tmp/aws.eml && sendmail -t < /tmp/aws.eml) || echo "aws,$(date -v-1d +%Y-%m-%d)" >> /root/reporting/fail.log
+0 19 * * * python /root/reporting/retry-failed-reports.py /root/reporting/fail.csv
+```
