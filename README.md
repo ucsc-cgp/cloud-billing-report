@@ -24,6 +24,8 @@ billing data generated these features.
 
 ### Generating reports
 
+You'll need Python 3.x. I've only tested this using Python 3.8.6.
+
 First, populate `config.json` and install requirements:
 
 ```console
