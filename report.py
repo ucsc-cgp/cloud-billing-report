@@ -4,6 +4,10 @@ Summarizes given billing data for a cloud platform as a .eml printed to stdout.
 import argparse
 import collections
 import csv
+import gzip
+import json
+import os
+import tempfile
 from datetime import (
     datetime,
     timedelta,
@@ -11,24 +15,21 @@ from datetime import (
 from decimal import (
     Decimal,
 )
-import gzip
-import json
-import os
-import tempfile
 from typing import (
     Mapping,
     Sequence,
 )
 
 import boto3
+import jinja2
 from dateutil.relativedelta import (
     relativedelta,
 )
 from google.cloud import storage
-import jinja2
 
 
 class Config:
+
     def __init__(self, platform: str, path: str):
         assert platform in report_types
         self._platform = platform
@@ -246,7 +247,6 @@ env.filters.update({
     'nested_sum_values': lambda m: sum(sum(k.values()) for k in m.values()),
     'sum_values': lambda m: sum(m.values())
 })
-
 
 if __name__ == '__main__':
     # https://youtrack.jetbrains.com/issue/PY-41806

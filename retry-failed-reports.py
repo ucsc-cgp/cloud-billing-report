@@ -2,11 +2,11 @@
 Retries failed reports given a list of failed report types and dates.
 """
 import argparse
+import subprocess
 from datetime import (
     datetime,
     timedelta,
 )
-import subprocess
 
 
 def at_least_four_days_ago(date: datetime.date) -> bool:
