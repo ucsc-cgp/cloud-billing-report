@@ -3,8 +3,8 @@ name: Test
 on: push
 
 jobs:
-  lint:
-    name: Check PEP8 and code format
+  test:
+    name: Run linters, doctests
     runs-on: ubuntu-latest
 
     steps:
@@ -29,3 +29,6 @@ jobs:
           # make format
           # This doesn't work yet and I don't know how to fix it.
           make check_clean
+
+      - name: Run doctests
+        run: make test
