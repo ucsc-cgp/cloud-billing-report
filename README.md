@@ -87,17 +87,20 @@ may not be available at all.
 Erich runs these reports via Docker daily; generating AWS reports at 6 AM PT and
 GCP reports at 5 PM PT. As mentioned above, this means that some reports may
 fail to generate on time, especially at the beginning of the month. To address
-this, there's some retry logic (see retry-failed-reports.py) to track and
-automatically retry generating those reports.
+this, there's some retry logic to track and automatically retry generating those
+reports.
+
+It's worth addressing that Docker seems a little heavyweight for something as
+small as this. Since running and developing this code is manually coordinated,
+running via Docker helps smooth the upgrade path, and makes managing
+dependencies a little easier.
 
 The cron jobs look something like this:
 
 ```
-SHELL=/bin/bash
-0 6 * * * root (docker run -v /root/reporting/config.json:/config.json:ro ghcr.io/ucsc-cgp/cloud-billing-report:latest aws > /tmp/aws.eml && sendmail -t < /tmp/aws.eml) || echo "aws,$(date -v-1d +%Y-%m-%d)" >> /root/reporting/fail.log
-0 17 * * * root (docker run -v /root/reporting/config.json:/config.json:ro -v /root/.config/gcloud:/root/.config/gcloud:ro ghcr.io/ucsc-cgp/cloud-billing-report:latest gcp > /tmp/gcp.eml && sendmail -t < /tmp/gcp.eml) || echo "gcp,$(date -v-1d +%Y-%m-%d)" >> /root/reporting/fail.log
-0 19 * * * root python /root/reporting/retry-failed-reports.py /root/reporting/fail.log
+0 6 * * * root bash /root/reporting/run-report.sh aws
+0 17 * * * root bash /root/reporting/run-report.sh gcp
+0 19 * * * root python3 /root/reporting/retry-failed-reports.py /root/reporting/fail.log
 ```
 
-Note that the last job, `retry-failed-reports.py`, needs to be run with Python
-3.
+(Assuming that everything in `scripts/` lives at `/root/reporting`.)

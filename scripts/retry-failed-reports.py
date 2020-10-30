@@ -9,22 +9,22 @@ from datetime import (
 )
 
 
-def at_least_four_days_ago(date: datetime.date) -> bool:
+def days_ago(days: int, date: datetime.date) -> bool:
     """
     >>> from datetime import datetime, timedelta
     >>> two_days_ago = datetime.now().date() - timedelta(days=2)
-    >>> at_least_four_days_ago(two_days_ago)
+    >>> days_ago(4, two_days_ago)
     False
 
     >>> four_days_ago = datetime.now().date() - timedelta(days=4)
-    >>> at_least_four_days_ago(four_days_ago)
+    >>> days_ago(4, four_days_ago)
     True
 
     >>> five_days_ago = datetime.now().date() - timedelta(days=5)
-    >>> at_least_four_days_ago(five_days_ago)
+    >>> days_ago(4, five_days_ago)
     True
     """
-    return (datetime.now().date() - timedelta(days=4)) >= date
+    return (datetime.now().date() - timedelta(days=days)) >= date
 
 
 def aws_report(date: str) -> bytes:
@@ -33,8 +33,8 @@ def aws_report(date: str) -> bytes:
                              'ghcr.io/ucsc-cgp/cloud-billing-report:latest',
                              'aws', date],
                             check=True,
-                            capture_output=True,
-                            shell=False)
+                            shell=False,
+                            stdout=subprocess.PIPE)
     return report.stdout
 
 
@@ -44,8 +44,8 @@ def gcp_report(date: str) -> bytes:
                              'ghcr.io/ucsc-cgp/cloud-billing-report:latest',
                              'gcp', date],
                             check=True,
-                            capture_output=True,
-                            shell=False)
+                            shell=False,
+                            stdout=subprocess.PIPE)
     return report.stdout
 
 
@@ -71,7 +71,7 @@ def main(path: str):
             report = reports[report_type](report_date)
         except subprocess.CalledProcessError as e:
             still_failing.append(failure)
-            if at_least_four_days_ago(_report_date):
+            if days_ago(4, _report_date.date()):
                 print(e.stderr)
         else:
             subprocess.run(['/usr/sbin/sendmail', '-t'],

@@ -1,4 +1,4 @@
-SOURCE = report.py retry-failed-reports.py
+SOURCE = report.py scripts/retry-failed-reports.py
 
 .PHONY: pep8
 pep8:
