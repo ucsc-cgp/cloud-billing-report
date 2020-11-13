@@ -1,8 +1,0 @@
-Mime-Version: 1.0
-Content-Type: text/html; charset='UTF-8'
-To: {{ ', '.join(email_recipients) }}
-From: {{ email_from }}
-Subject: {{ platform }} Report for {{ report_date.strftime('%B %d, %Y') }}
-
-{% block content %}
-{% endblock content %}
