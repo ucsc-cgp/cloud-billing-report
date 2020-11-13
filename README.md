@@ -53,15 +53,51 @@ $ docker build -t report .
 and run it:
 
 ```console
-$ docker run --volume \
-      $(pwd)/config.json:config.json:ro \
+$ docker run \
+      --volume $(pwd)/config.json:/config.json:ro \
       report aws
 
-$ docker run --volume \
-      $(pwd)/config.json:config.json:ro \
-      ~/.config/gcloud/:/root/.config/gcloud:ro \
+$ docker run \
+      --volume $(pwd)/config.json:/config.json:ro \
+      --volume ~/.config/gcloud/:/root/.config/gcloud:ro \
       report gcp 2019-12-31
 ```
+
+### Authentication
+
+#### Google Cloud Platform
+
+There are two ways to authenticate to GCP. The quick and dirty way is to install
+the gcloud command line tool and do `gcloud auth login`.
+
+If you're running the script in a Docker container, it's sufficient to do
+`gcloud auth login` then mount the gcloud config directory inside the container,
+a la:
+
+```console
+$ docker run --volume ~/.config/gcloud/:/root/.config/gcloud:ro ... report gcp
+```
+
+but you shouldn't do that. Instead, you can generate a service account with
+limited permissions and use that to authenticate:
+
+```console
+$ SERVICE_ACCOUNT_NAME=my-service-account-name-here
+$ PROJECT_ID=project-name-123456
+$ gcloud iam service-accounts create $SERVICE_ACCOUNT_NAME
+$ gcloud projects add-iam-policy-binding $PROJECT_ID \
+      --member="serviceAccount:${SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com" \
+      --roles roles/bigquery.jobUser
+$ gcloud iam service-accounts key create ./gcp-credentials.json \
+      --iam-account "${SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+$ # You might need to grant the service account access to the data set
+$ # separately.
+$ docker run \
+      -e GOOGLE_APPLICATION_CREDENTIALS=/gcp-credentials.json \
+      -v $(pwd)/gcp-credentials.json:/gcp-credentials.json:ro \
+      -v $(pwd)/config.json:/config.json:ro report gcp | sendmail -t
+```
+
 
 ## Timing
 
