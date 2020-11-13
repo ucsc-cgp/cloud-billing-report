@@ -4,10 +4,6 @@ Summarizes given billing data for a cloud platform as a .eml printed to stdout.
 import argparse
 import collections
 import csv
-import gzip
-import json
-import os
-import tempfile
 from datetime import (
     datetime,
     timedelta,
@@ -15,17 +11,27 @@ from datetime import (
 from decimal import (
     Decimal,
 )
+import gzip
+import itertools
+import json
+import operator
+import os
+import tempfile
 from typing import (
+    Iterator,
     Mapping,
     Sequence,
+    Union,
 )
 
 import boto3
-import jinja2
 from dateutil.relativedelta import (
     relativedelta,
 )
-from google.cloud import storage
+from google.cloud import (
+    bigquery,
+)
+import jinja2
 
 
 class Config:
@@ -79,6 +85,11 @@ class Config:
     def accounts(self) -> Mapping:
         assert self._platform == 'aws'
         return self._config[self._platform]['accounts']
+
+    @property
+    def bigquery_table(self) -> str:
+        assert self._platform == 'gcp'
+        return self._config[self._platform]['bigquery_table']
 
 
 def report_aws(report_date: datetime.date, config_path: str) -> str:
@@ -152,38 +163,33 @@ def report_aws(report_date: datetime.date, config_path: str) -> str:
 
 def report_gcp(report_date: datetime.date, config_path: str) -> str:
     config = Config('gcp', path=config_path)
-    storage_client = storage.Client(project=None)
-    bucket = storage_client.bucket(config.bucket)
-    service_by_project = nested_dict()
-    service_by_project_today = nested_dict()
-    csv_date = report_date.replace(day=1)
-
-    while csv_date <= report_date:
-        blob = bucket.blob(csv_date.strftime('billing-report--%Y-%m-%d.csv'))
-        report_csv = csv.DictReader(blob.download_as_text().splitlines())
-
-        for row in report_csv:
-            service = row['Line Item'].split('/')[2]
-            project = row['Project Name'] or '(none)'
-            cost = Decimal(row['Cost'])
-
-            service_by_project[project][service] += cost
-            if csv_date == report_date:
-                service_by_project_today[project][service] += cost
-
-        csv_date = csv_date + timedelta(days=1)
-
+    client = bigquery.Client()
+    query_month = report_date.strftime('%Y%m')
+    query_today = report_date.strftime('%Y-%m-%d')
+    # noinspection SqlNoDataSourceInspection
+    query = f'''SELECT project.name, service.description,
+          SUM(cost) + SUM(IFNULL(creds.amount, 0)) AS cost_month,
+          SUM(CASE WHEN DATE(usage_start_time) = '{query_today}'
+                   THEN cost ELSE 0 END) +
+          SUM(CASE WHEN DATE(usage_start_time) = '{query_today}'
+                   THEN IFNULL(creds.amount, 0) ELSE 0 END) as cost_today
+        FROM `{config.bigquery_table}`
+        LEFT JOIN UNNEST(credits) AS creds
+        WHERE invoice.month = '{query_month}' AND DATE(usage_start_time) <= '{query_today}'
+        GROUP BY project.name, service.description
+        ORDER BY LOWER(project.name) ASC, service.description ASC'''
+    query_job = client.query(query)
+    rows = list(query_job.result())
     env.filters['print_diff'] = lambda a: print_diff(a, config.warning_threshold)
     return env.get_template('gcp_report.html').render(
+        rows=rows,
         report_date=report_date,
-        service_by_project=service_by_project,
-        service_by_project_today=service_by_project_today,
         email_from=config.email_from,
         email_recipients=config.email_recipients
     )
 
 
-def print_amount(amount: Decimal) -> str:
+def print_amount(amount: Union[Decimal, float, int]) -> str:
     """
     >>> from decimal import Decimal
     >>> print_amount(Decimal('20.000000000000000001'))
@@ -192,7 +198,7 @@ def print_amount(amount: Decimal) -> str:
     >>> print_amount(Decimal('-10'))
     '-$10.00'
     """
-    amount = amount.quantize(Decimal('0.01'))
+    amount = Decimal(amount).quantize(Decimal('0.01'))
     symbol = '-' if amount < 0 else ''
     return f'{symbol}${abs(amount)}'
 
@@ -234,6 +240,51 @@ def nested_dict():
     return collections.defaultdict(lambda: collections.defaultdict(Decimal))
 
 
+def filter_by(rows: Sequence[Mapping], **conditions) -> Iterator[Mapping]:
+    """
+    >>> my_rows = [
+    ...     {'foo': 1, 'bar': 2, 'baz': 3},
+    ...     {'foo': 1, 'bar': 3, 'baz': 2},
+    ...     {'foo': 2, 'bar': 2, 'baz': 1}
+    ... ]
+
+    >>> list(filter_by(my_rows, bar=2))
+    [{'foo': 1, 'bar': 2, 'baz': 3}, {'foo': 2, 'bar': 2, 'baz': 1}]
+
+    >>> list(filter_by(my_rows, bar=2, foo=2))
+    [{'foo': 2, 'bar': 2, 'baz': 1}]
+    """
+    return (row for row in rows if dict(row).items() >= conditions.items())
+
+
+def group_by(rows, key: str, *targets: str, **conditions):
+    """
+    SELECT key, SUM(target1), ..., SUM(targetn) FROM ... WHERE conditions GROUP BY key
+    >>> my_rows = [
+    ...     {'foo': 1, 'bar': 2, 'baz': 3},
+    ...     {'foo': 1, 'bar': 3, 'baz': 2},
+    ...     {'foo': 2, 'bar': 2, 'baz': 1}
+    ... ]
+
+    >>> group_by(my_rows, 'foo', 'bar')
+    [(1, 5), (2, 2)]
+
+    >>> group_by(my_rows, 'foo', 'bar', 'baz')
+    [(1, 5, 5), (2, 2, 1)]
+
+    >>> group_by(my_rows, 'foo', 'bar', 'baz', baz=2)
+    [(1, 3, 2)]
+    """
+    grouped = (
+        (k, list(v))
+        for k, v in itertools.groupby(filter_by(rows, **conditions), key=operator.itemgetter(key))
+    )
+    return [
+        (k, *(sum(val[target] for val in vals) for target in targets))
+        for k, vals in grouped
+    ]
+
+
 report_types = {
     'gcp': report_gcp,
     'aws': report_aws
@@ -245,7 +296,10 @@ env.filters.update({
     'ymd': lambda d: d.strftime('%Y/%m/%d'),
     'ym': lambda d: d.strftime('%Y/%m'),
     'nested_sum_values': lambda m: sum(sum(k.values()) for k in m.values()),
-    'sum_values': lambda m: sum(m.values())
+    'sum_values': lambda m: sum(m.values()),
+    'sum_key': lambda rows, key: sum(row[key] for row in rows),
+    'group_by': group_by,
+    'filter_by': filter_by
 })
 
 if __name__ == '__main__':

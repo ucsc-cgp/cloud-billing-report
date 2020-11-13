@@ -1,6 +1,6 @@
 {
     "gcp": {
-        "bucket": "bucket_name",
+        "bigquery_table": "<PROJECT>.<DATASET>.gcp_billing_export_v1<BILLING_ACCOUNT_ID>",
         "warning_threshold": 200,
         "from": "example@example.com",
         "recipients": [

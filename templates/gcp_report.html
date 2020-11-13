@@ -13,26 +13,26 @@
         </tr>
         </thead>
         <tbody>
-        {% for project_id, services in service_by_project.items()|sort %}
+        {% for project, cost_month, cost_today in rows|group_by('name', 'cost_month', 'cost_today') %}
             <tr>
-                <td><a href='#{{ project_id }}'>{{ project_id }}</a></td>
-                <td>{{ service_by_project[project_id]|sum_values|print_amount }}</td>
-                <td>{{ service_by_project_today[project_id]|sum_values|print_diff }}</td>
+                <td><a href='#{{ project }}'>{{ project }}</a></td>
+                <td>{{ cost_month|print_amount }}</td>
+                <td>{{ cost_today|print_diff }}</td>
             </tr>
         {% endfor %}
         </tbody>
         <tfoot>
         <tr>
             <td>Grand total</td>
-            <td>{{ service_by_project|nested_sum_values|print_amount }}</td>
-            <td>{{ service_by_project_today|nested_sum_values|print_amount }}</td>
+            <td>{{ rows|sum_key('cost_month')|print_amount }}</td>
+            <td>{{ rows|sum_key('cost_today')|print_amount }}</td>
         </tr>
         </tfoot>
     </table>
 
-    {% for project_id, services in service_by_project.items()|sort %}
-        <a name='{{ project_id }}' id='{{ project_id }}'></a>
-        <h2>Report for project {{ project_id }}</h2>
+    {% for project, month_total, today_total in rows|group_by('name', 'cost_month', 'cost_today') %}
+        <a name='{{ project }}' id='{{ project }}'></a>
+        <h2>Report for project {{ project }}</h2>
         <table>
             <thead>
             <tr>
@@ -42,19 +42,19 @@
             </tr>
             </thead>
             <tbody>
-            {% for service, amount in services.items()|sort %}
+            {% for service, month_cost, today_cost in rows|filter_by(name=project)|group_by('description', 'cost_month', 'cost_today') %}
                 <tr>
                     <td>{{ service }}</td>
-                    <td>{{ amount|print_amount }}</td>
-                    <td>{{ service_by_project_today[project_id][service]|print_diff }}</td>
+                    <td>{{ month_cost|print_amount }}</td>
+                    <td>{{ today_cost|print_diff }}</td>
                 </tr>
             {% endfor %}
             </tbody>
             <tfoot>
             <tr>
                 <td>Grand total</td>
-                <td>{{ service_by_project[project_id]|sum_values|print_amount }}</td>
-                <td>{{ service_by_project_today[project_id]|sum_values|print_diff }}</td>
+                <td>{{ month_total|print_amount }}</td>
+                <td>{{ today_total|print_diff }}</td>
             </tr>
             </tfoot>
         </table>
