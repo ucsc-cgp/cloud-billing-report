@@ -167,7 +167,7 @@ class AWSReport(Report):
             account = self.accounts.get(row['lineItem/UsageAccountId'], '(unknown)')
             service = row['product/ProductName']
             amount = Decimal(row['lineItem/BlendedCost'])
-            when = row['lineItem/UsageEndDate'][0:10]  # ISO8601
+            when = row['lineItem/UsageStartDate'][0:10]  # ISO8601
 
             if when == today:
                 service_by_account_today[account][service] += amount
