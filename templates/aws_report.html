@@ -33,6 +33,25 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
 {% for account_id, services in service_by_account.items()|sort %}
 <a name='{{ account_id }}' id='{{ account_id }}'></a>
 <h2>Report for account {{ account_id }}</h2>
+
+    <table>
+    <caption>Untagged Service Breakdown</caption>
+    <thead>
+        <tr>
+            <th>Resource ID</th>
+            <th>Resource Type</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for resource_id, resource_type in untagged_resource_by_account[account_id].items()|sort(attribute='1') %}
+            <tr>
+                <td>{{ resource_id }}</td>
+                <td>{{ resource_type }}</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+    </table>
+
     {% if service_by_account[account_id].get('Amazon Elastic Compute Cloud') %}
     <table>
         <caption>EC2 Breakdown by Owner</caption>
