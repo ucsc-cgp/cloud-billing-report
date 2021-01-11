@@ -40,6 +40,7 @@ import jinja2
 
 
 class Report:
+    UNTAGGED = '(untagged)'
 
     def __init__(self, *, platform: str, date: datetime.date, config_path: str):
         self.platform = platform
@@ -126,6 +127,10 @@ class Report:
 
 
 class AWSReport(Report):
+    # TODO: Should move this into a config file. Holding off for now as there is a config refactor in the near future
+    RESOURCE_SHORTHAND = {"Amazon Elastic Compute Cloud": "AWS EC2",
+                          "Amazon Simple Storage Service": "AWS S3 Bucket",
+                          "Amazon Elastic Block Store": "AWS EBS"}
 
     def __init__(self, config_path: str, date: datetime.date):
         super().__init__(platform='aws', config_path=config_path, date=date)
@@ -161,20 +166,28 @@ class AWSReport(Report):
         ec2_owner_by_account_today = nested_dict()
         ec2_by_name = collections.defaultdict(Decimal)
         ec2_by_name_today = collections.defaultdict(Decimal)
+        untagged_resource_by_account = collections.defaultdict(dict)
         today = self.date.strftime('%Y-%m-%d')
 
         for row in report_csv:
-            account = self.accounts.get(row['lineItem/UsageAccountId'], '(unknown)')
-            service = row['product/ProductName']
-            amount = Decimal(row['lineItem/BlendedCost'])
+            account = self.accounts.get(row['lineItem/UsageAccountId'], '(unknown)')  # account for resource
+            resource_id = row['lineItem/ResourceId']  # id of the resource
+            service = row['product/ProductName']  # which type of product this is
+            amount = Decimal(row['lineItem/BlendedCost'])  # the cost associated with this
             when = row['lineItem/UsageStartDate'][0:10]  # ISO8601
+            owner = row['resourceTags/user:Owner'] or self.UNTAGGED  # owner of the resource, untagged if none specified
+            name = row['resourceTags/user:Name'] or self.UNTAGGED  # name of the resource, untagged if none specified
+
+            # if the resource is untagged, we want to explicitly list it under it's respective account
+            if (owner == self.UNTAGGED) \
+                    and service == "Amazon Simple Storage Service" \
+                    and len(resource_id) != 0:
+                untagged_resource_by_account[account][resource_id] = self.RESOURCE_SHORTHAND[service]
 
             if when == today:
                 service_by_account_today[account][service] += amount
                 service_by_account[account][service] += amount
                 if service == 'Amazon Elastic Compute Cloud':
-                    owner = row['resourceTags/user:Owner'] or '(untagged)'
-                    name = row['resourceTags/user:Name'] or '(untagged)'
                     ec2_by_name_today[name] += amount
                     ec2_by_name[name] += amount
                     ec2_owner_by_account_today[account][owner] += amount
@@ -182,8 +195,6 @@ class AWSReport(Report):
             elif when < today:
                 service_by_account[account][service] += amount
                 if service == 'Amazon Elastic Compute Cloud':
-                    owner = row['resourceTags/user:Owner'] or '(untagged)'
-                    name = row['resourceTags/user:Name'] or '(untagged)'
                     ec2_by_name[name] += amount
                     ec2_owner_by_account[account][owner] += amount
 
@@ -194,7 +205,8 @@ class AWSReport(Report):
             ec2_owner_by_account=ec2_owner_by_account,
             ec2_owner_by_account_today=ec2_owner_by_account_today,
             ec2_by_name=ec2_by_name,
-            ec2_by_name_today=ec2_by_name_today
+            ec2_by_name_today=ec2_by_name_today,
+            untagged_resource_by_account=untagged_resource_by_account
         )
 
 
