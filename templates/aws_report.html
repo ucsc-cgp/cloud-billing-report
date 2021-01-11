@@ -35,18 +35,18 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
 <h2>Report for account {{ account_id }}</h2>
 
     <table>
-    <caption>Untagged Service Breakdown</caption>
+    <caption>Non-compliant Resource Breakdown</caption>
     <thead>
         <tr>
             <th>Resource ID</th>
-            <th>Resource Type</th>
+            <th>Product Type</th>
         </tr>
     </thead>
     <tbody>
-        {% for resource_id, resource_type in untagged_resource_by_account[account_id].items()|sort(attribute='1') %}
+        {% for resource_id, product_type in untagged_resource_by_account[account_id].items()|sort(attribute='1') %}
             <tr>
                 <td>{{ resource_id }}</td>
-                <td>{{ resource_type }}</td>
+                <td>{{ product_type }}</td>
             </tr>
         {% endfor %}
     </tbody>
@@ -82,6 +82,7 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
     <br>
     {% endif %}
     <table>
+        <caption>Service Summary</caption>
         <thead>
             <tr>
                 <th>Service</th>

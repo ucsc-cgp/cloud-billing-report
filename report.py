@@ -127,7 +127,10 @@ class Report:
 
 
 class AWSReport(Report):
-    RESOURCES_UNDER_POLICY = ["Amazon Elastic Compute Cloud", "Amazon Simple Storage Service"]
+    # TODO: Should move this into a config file. Holding off for now as there is a config refactor in the near future
+    RESOURCE_SHORTHAND = {"Amazon Elastic Compute Cloud": "AWS EC2",
+                          "Amazon Simple Storage Service": "AWS S3 Bucket",
+                          "Amazon Elastic Block Store": "AWS EBS"}
 
     def __init__(self, config_path: str, date: datetime.date):
         super().__init__(platform='aws', config_path=config_path, date=date)
@@ -167,19 +170,19 @@ class AWSReport(Report):
         today = self.date.strftime('%Y-%m-%d')
 
         for row in report_csv:
-            account = self.accounts.get(row['lineItem/UsageAccountId'], '(unknown)')  # which account the resource belongs to
+            account = self.accounts.get(row['lineItem/UsageAccountId'], '(unknown)')  # account for resource
             resource_id = row['lineItem/ResourceId']  # id of the resource
-            service = row['product/ProductName']  # which type of resource this is
+            service = row['product/ProductName']  # which type of product this is
             amount = Decimal(row['lineItem/BlendedCost'])  # the cost associated with this
             when = row['lineItem/UsageStartDate'][0:10]  # ISO8601
             owner = row['resourceTags/user:Owner'] or self.UNTAGGED  # owner of the resource, untagged if none specified
             name = row['resourceTags/user:Name'] or self.UNTAGGED  # name of the resource, untagged if none specified
 
             # if the resource is untagged, we want to explicitly list it under it's respective account
-            if (owner == self.UNTAGGED or name == self.UNTAGGED) \
-                    and service in self.RESOURCES_UNDER_POLICY \
+            if (owner == self.UNTAGGED) \
+                    and service == "Amazon Simple Storage Service" \
                     and len(resource_id) != 0:
-                untagged_resource_by_account[account][resource_id] = service
+                untagged_resource_by_account[account][resource_id] = self.RESOURCE_SHORTHAND[service]
 
             if when == today:
                 service_by_account_today[account][service] += amount
