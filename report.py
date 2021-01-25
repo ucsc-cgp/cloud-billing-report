@@ -178,13 +178,14 @@ class AWSReport(Report):
             owner = row['resourceTags/user:Owner'] or self.UNTAGGED  # owner of the resource, untagged if none specified
             name = row['resourceTags/user:Name'] or self.UNTAGGED  # name of the resource, untagged if none specified
 
-            # if the resource is untagged, we want to explicitly list it under it's respective account
-            if (owner == self.UNTAGGED) \
-                    and service == "Amazon Simple Storage Service" \
-                    and len(resource_id) != 0:
-                untagged_resource_by_account[account][resource_id] = self.RESOURCE_SHORTHAND[service]
-
             if when == today:
+
+                # if the resource is untagged, we want to explicitly list it under it's respective account
+                if (owner == self.UNTAGGED) \
+                        and service == "Amazon Simple Storage Service" \
+                        and len(resource_id) != 0:  # there is 1 resource in each filtering that has no id...
+                    untagged_resource_by_account[account][resource_id] = self.RESOURCE_SHORTHAND[service]
+
                 service_by_account_today[account][service] += amount
                 service_by_account[account][service] += amount
                 if service == 'Amazon Elastic Compute Cloud':
