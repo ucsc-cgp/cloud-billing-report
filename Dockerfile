@@ -6,5 +6,6 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY templates/ templates/
 COPY report.py .
+COPY src/ src/
 
 ENTRYPOINT ["python", "report.py"]
