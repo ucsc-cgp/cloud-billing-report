@@ -18,6 +18,18 @@
             "123456789012": "account-name",
             "098787654321": "account-name-2"
         },
+        "compliance": {
+            "accounts": {
+                "id" : "name"
+            },
+            "iam_role_name": "my_iam_role_name_suffix",
+            "regions": [
+                "us-east-1",
+                "us-east-2",
+                "us-west-1",
+                "us_west-2"
+            ]
+        },
         "warning_threshold": 200,
         "from": "example@example.com",
         "recipients": [

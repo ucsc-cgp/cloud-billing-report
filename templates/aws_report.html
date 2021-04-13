@@ -34,8 +34,9 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
 <a name='{{ account_id }}' id='{{ account_id }}'></a>
 <h2>Report for account {{ account_id }}</h2>
 
+    {%  if account_id in noncompliant_resource_by_account %}
     <table>
-    <caption>Non-compliant Resource Breakdown</caption>
+    <caption>Non-compliant Resource Breakdown (Compliance requires the resources to have an email address under the Owner tag.)</caption>
     <thead>
         <tr>
             <th>Resource ID</th>
@@ -43,7 +44,7 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
         </tr>
     </thead>
     <tbody>
-        {% for resource_id, product_type in untagged_resource_by_account[account_id].items()|sort(attribute='1') %}
+        {% for resource_id, product_type in noncompliant_resource_by_account[account_id].items()|sort(attribute='1') %}
             <tr>
                 <td>{{ resource_id }}</td>
                 <td>{{ product_type }}</td>
@@ -51,6 +52,7 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
         {% endfor %}
     </tbody>
     </table>
+    {% endif %}
 
     {% if service_by_account[account_id].get('Amazon Elastic Compute Cloud') %}
     <table>

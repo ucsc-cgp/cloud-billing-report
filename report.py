@@ -38,6 +38,9 @@ from google.cloud import (
 )
 import jinja2
 
+from src.compliance_report import compliance_report
+from src.Boto3_STS_Service import Boto3_STS_Service
+
 
 class Report:
     UNTAGGED = '(untagged)'
@@ -107,6 +110,11 @@ class Report:
         return self._config['accounts']
 
     @property
+    def compliance(self) -> Mapping:
+        assert self.platform == 'aws'
+        return self._config['compliance']
+
+    @property
     def bigquery_table(self) -> str:
         assert self.platform == 'gcp'
         return self._config['bigquery_table']
@@ -157,6 +165,28 @@ class AWSReport(Report):
             with gzip.open(tmp.name, 'r') as report_fp:
                 return report_fp.read().decode().splitlines()
 
+    def generate_noncompliant_dict(self) -> Mapping:
+
+        # start service
+        bss = Boto3_STS_Service()
+
+        # get compliance dict from the config file
+        compliance_config = self.compliance
+
+        # Create the list of accounts, arns, and regions that we need to query AWS Config for
+        account_list = []
+        arn_list = []
+        region_list = compliance_config["regions"]
+        for k in compliance_config["accounts"]:
+            account_list.append(compliance_config["accounts"][k])
+            arn_list.append(f"arn:aws:iam::{k}:role/{compliance_config['iam_role_name']}")
+        aws_config_rule_name = "custodian-mandatory_tag_enforcer_s3"
+
+        cr = compliance_report()
+        compliance_dict = cr.generate_full_compliance_report(bss, account_list, arn_list, region_list, aws_config_rule_name)
+
+        return compliance_dict
+
     def generate_report(self) -> str:
         report_csv_lines = self.usage_csv()
         report_csv = csv.DictReader(report_csv_lines)
@@ -166,8 +196,14 @@ class AWSReport(Report):
         ec2_owner_by_account_today = nested_dict()
         ec2_by_name = collections.defaultdict(Decimal)
         ec2_by_name_today = collections.defaultdict(Decimal)
-        untagged_resource_by_account = collections.defaultdict(dict)
         today = self.date.strftime('%Y-%m-%d')
+
+        # create list of noncompliant resources
+        noncompliant_resource_by_account = collections.defaultdict(dict)
+        compliance_dict =  self.generate_noncompliant_dict()
+        for account in compliance_dict:
+            for resource in compliance_dict[account]:
+                noncompliant_resource_by_account[account][resource] = self.RESOURCE_SHORTHAND["Amazon Simple Storage Service"]
 
         for row in report_csv:
             account = self.accounts.get(row['lineItem/UsageAccountId'], '(unknown)')  # account for resource
@@ -179,13 +215,6 @@ class AWSReport(Report):
             name = row['resourceTags/user:Name'] or self.UNTAGGED  # name of the resource, untagged if none specified
 
             if when == today:
-
-                # if the resource is untagged, we want to explicitly list it under it's respective account
-                if (owner == self.UNTAGGED) \
-                        and service == "Amazon Simple Storage Service" \
-                        and len(resource_id) != 0:  # there is 1 resource in each filtering that has no id...
-                    untagged_resource_by_account[account][resource_id] = self.RESOURCE_SHORTHAND[service]
-
                 service_by_account_today[account][service] += amount
                 service_by_account[account][service] += amount
                 if service == 'Amazon Elastic Compute Cloud':
@@ -207,7 +236,7 @@ class AWSReport(Report):
             ec2_owner_by_account_today=ec2_owner_by_account_today,
             ec2_by_name=ec2_by_name,
             ec2_by_name_today=ec2_by_name_today,
-            untagged_resource_by_account=untagged_resource_by_account
+            noncompliant_resource_by_account=noncompliant_resource_by_account
         )
 
 
@@ -220,6 +249,7 @@ class GCPReport(Report):
         client = bigquery.Client()
         query_month = self.date.strftime('%Y%m')
         query_today = self.date.strftime('%Y-%m-%d')
+
         # noinspection SqlNoDataSourceInspection
         query = f'''SELECT
               project.name,
