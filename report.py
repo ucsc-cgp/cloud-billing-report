@@ -202,8 +202,8 @@ class AWSReport(Report):
 
         return compliance_list
 
-    def generate_personalized_compliance_reports(self, report_csv: Mapping, report_dir="tmp/personalizedEmails/") -> str:
-        today = self.date.strftime('%Y-%m-%d')
+    def generate_personalized_compliance_reports(self, report_dir="tmp/personalizedEmails/") -> str:
+        # today = self.date.strftime('%Y-%m-%d')
         compliance_list = self.generate_compliance_list("COMPLIANT")
 
         # TODO Most billing reports are showing $0.00 for the S3 costs... may need to rethink
@@ -254,8 +254,9 @@ class AWSReport(Report):
         ec2_by_name_today = collections.defaultdict(Decimal)
         today = self.date.strftime('%Y-%m-%d')
 
+        # TODO only run this once a week
         # generate the personalized reports for COMPLIANT resources
-        self.generate_personalized_compliance_reports(report_csv)
+        self.generate_personalized_compliance_reports()
 
         # create list of noncompliant resources
         noncompliant_resource_by_account = {self.compliance["accounts"][account_id]: [] for account_id in self.compliance["accounts"]}
