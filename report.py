@@ -165,7 +165,7 @@ class AWSReport(Report):
             with gzip.open(tmp.name, 'r') as report_fp:
                 return report_fp.read().decode().splitlines()
 
-    def generate_noncompliant_dict(self) -> Mapping:
+    def generate_noncompliant_list(self) -> list:
 
         # start service
         bss = Boto3_STS_Service()
@@ -173,19 +173,24 @@ class AWSReport(Report):
         # get compliance dict from the config file
         compliance_config = self.compliance
 
-        # Create the list of accounts, arns, and regions that we need to query AWS Config for
-        account_list = []
+        # Create the list of accounts, role arns, and regions that we need to query AWS Config for
+        account_id_list = []
+        account_name_list = []
         arn_list = []
         region_list = compliance_config["regions"]
         for k in compliance_config["accounts"]:
-            account_list.append(compliance_config["accounts"][k])
+            account_id_list.append(k)
+            account_name_list.append(compliance_config["accounts"][k])
             arn_list.append(f"arn:aws:iam::{k}:role/{compliance_config['iam_role_name']}")
         aws_config_rule_name = "custodian-mandatory_tag_enforcer_s3"
 
         cr = compliance_report()
-        compliance_dict = cr.generate_full_compliance_report(bss, account_list, arn_list, region_list, aws_config_rule_name)
+        compliance_list = cr.generate_full_compliance_report(bss, account_id_list, account_name_list, arn_list, region_list, aws_config_rule_name)
 
-        return compliance_dict
+        return compliance_list
+
+    def generate_personalized_compliance_report(self, report_csv: Mapping) -> str:
+        return
 
     def generate_report(self) -> str:
         report_csv_lines = self.usage_csv()
@@ -199,15 +204,15 @@ class AWSReport(Report):
         today = self.date.strftime('%Y-%m-%d')
 
         # create list of noncompliant resources
-        noncompliant_resource_by_account = collections.defaultdict(dict)
-        compliance_dict =  self.generate_noncompliant_dict()
-        for account in compliance_dict:
-            for resource in compliance_dict[account]:
-                noncompliant_resource_by_account[account][resource] = self.RESOURCE_SHORTHAND["Amazon Simple Storage Service"]
+        noncompliant_resource_by_account = {self.compliance["accounts"][account_id]: [] for account_id in self.compliance["accounts"]}
+        compliance_list = self.generate_noncompliant_list()
+        for resource in compliance_list:
+            assert resource.get_compliance_status() == "NON_COMPLIANT"
+            noncompliant_resource_by_account[resource.get_account_name()].append(resource)
 
+        # Populate the dictionaries used for the daily global report
         for row in report_csv:
             account = self.accounts.get(row['lineItem/UsageAccountId'], '(unknown)')  # account for resource
-            resource_id = row['lineItem/ResourceId']  # id of the resource
             service = row['product/ProductName']  # which type of product this is
             amount = Decimal(row['lineItem/BlendedCost'])  # the cost associated with this
             when = row['lineItem/UsageStartDate'][0:10]  # ISO8601
