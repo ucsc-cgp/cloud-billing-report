@@ -12,6 +12,14 @@ class report_resource:
             "Owner": None,
             "owner": None
         }
+        self.email = None
+
+        self.daily_cost = 0
+        self.monthly_cost = 0
+
+    # simple matching between this resource object and a billing report CSV row
+    def is_match(self, account_id: str, resource_id: str):
+        return self.account_id == account_id and self.resource_id == resource_id
 
     def add_owner_tag_value(self, tag: str, tag_value: str):
 
@@ -20,6 +28,23 @@ class report_resource:
 
         # Add the tag value to the dictionary. This value may not be an email address, it can be 'shared'.
         self.tag_status[tag] = tag_value
+        self.set_email_if_valid(tag_value)
+
+    def set_email_if_valid(self, tag_value: str):
+        lowercase_tag = tag_value.lower()
+
+        # If the compliant tag does not contain the word 'shared' then this is an email address
+        if "shared" not in lowercase_tag:
+            self.email = tag_value
+
+    def set_daily_cost(self, val: float):
+        # if the daily cost is already set, we shouldn't be setting it again
+        assert self.daily_cost == 0
+        self.daily_cost = val
+
+    # Since the monthly cost is an aggregate of multiple days, add every value passed
+    def add_to_monthly_cost(self, val: float):
+        self.monthly_cost += val
 
     def get_resource_id(self):
         return self.resource_id
@@ -41,3 +66,12 @@ class report_resource:
 
     def get_tag_status(self):
         return self.tag_status
+
+    def get_email(self):
+        return self.email
+
+    def get_daily_cost(self):
+        return self.daily_cost
+
+    def get_monthly_cost(self):
+        return self.monthly_cost

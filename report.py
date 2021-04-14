@@ -133,6 +133,18 @@ class Report:
         msg.set_content(body, subtype='html')
         return msg.as_string()
 
+    def render_personalized_email(self, recipient: str, resources: list):
+        msg = EmailMessage()
+        subject_date = self.date.strftime('%B %d, %Y')
+        subject = f'{self.platform.upper()} Report for {subject_date}'
+        msg['Subject'] = subject
+        msg['From'] = self.email_from
+        msg['To'] = recipient
+        template = self.jinja_env.get_template('personalized_report.html')
+        body = template.render(report_date=self.date, resource_list=resources)
+        msg.set_content(body, subtype='html')
+        return msg.as_string()
+
 
 class AWSReport(Report):
     # TODO: Should move this into a config file. Holding off for now as there is a config refactor in the near future
@@ -165,7 +177,7 @@ class AWSReport(Report):
             with gzip.open(tmp.name, 'r') as report_fp:
                 return report_fp.read().decode().splitlines()
 
-    def generate_noncompliant_list(self) -> list:
+    def generate_compliance_list(self, compliance_status='NON_COMPLIANT') -> list:
 
         # start service
         bss = Boto3_STS_Service()
@@ -185,12 +197,51 @@ class AWSReport(Report):
         aws_config_rule_name = "custodian-mandatory_tag_enforcer_s3"
 
         cr = compliance_report()
-        compliance_list = cr.generate_full_compliance_report(bss, account_id_list, account_name_list, arn_list, region_list, aws_config_rule_name)
+        compliance_list = cr.generate_full_compliance_report(bss, account_id_list, account_name_list, arn_list, region_list,
+                                                             aws_config_rule_name, compliance_status)
 
         return compliance_list
 
-    def generate_personalized_compliance_report(self, report_csv: Mapping) -> str:
-        return
+    def generate_personalized_compliance_reports(self, report_csv: Mapping, report_dir="tmp/personalizedEmails/") -> str:
+        today = self.date.strftime('%Y-%m-%d')
+        compliance_list = self.generate_compliance_list("COMPLIANT")
+
+        # TODO Most billing reports are showing $0.00 for the S3 costs... may need to rethink
+        # Match the billing data from the csv to COMPLIANT resources
+        # for row in report_csv:
+        #     account = self.accounts.get(row['lineItem/UsageAccountId'], '(unknown)')  # account for resource
+        #     resource_name = row['lineItem/ResourceId']  # name of the resource
+        #     when = row['lineItem/UsageStartDate'][0:10]  # ISO8601
+        #     amount = Decimal(row['lineItem/BlendedCost'])  # the cost associated with this
+        #
+        #     for resource in compliance_list:
+        #         # check to see if the csv row contains information about this resource
+        #         if resource.is_match(account, resource_name):
+        #             if when == today:
+        #                 resource.set_daily_cost(amount)
+        #             elif when < today:
+        #                 resource.add_to_monthly_cost(amount)
+        #             break
+
+        # Create a dictionary, where the key is the email address and the value is the list of resources
+        account_resource_dict = {}
+        for resource in compliance_list:
+            # The email address can be none if the tag included 'shared'
+            if resource.get_email() is not None:
+                if resource.get_email() in account_resource_dict:
+                    account_resource_dict[resource.get_email()].append(resource)
+                else:
+                    account_resource_dict[resource.get_email()] = [resource]
+
+        # For every email in our dictionary, generate an email report
+        for email in account_resource_dict:
+            eml_text = self.render_personalized_email(
+                email,
+                account_resource_dict[email]
+            )
+            stripped_email = ''.join(c for c in email if c.isalnum())
+            with open(f"{report_dir}{stripped_email}.eml", "w") as eml_file:
+                eml_file.write(eml_text)
 
     def generate_report(self) -> str:
         report_csv_lines = self.usage_csv()
@@ -203,9 +254,12 @@ class AWSReport(Report):
         ec2_by_name_today = collections.defaultdict(Decimal)
         today = self.date.strftime('%Y-%m-%d')
 
+        # generate the personalized reports for COMPLIANT resources
+        self.generate_personalized_compliance_reports(report_csv)
+
         # create list of noncompliant resources
         noncompliant_resource_by_account = {self.compliance["accounts"][account_id]: [] for account_id in self.compliance["accounts"]}
-        compliance_list = self.generate_noncompliant_list()
+        compliance_list = self.generate_compliance_list("NON_COMPLIANT")
         for resource in compliance_list:
             assert resource.get_compliance_status() == "NON_COMPLIANT"
             noncompliant_resource_by_account[resource.get_account_name()].append(resource)
@@ -216,7 +270,7 @@ class AWSReport(Report):
             service = row['product/ProductName']  # which type of product this is
             amount = Decimal(row['lineItem/BlendedCost'])  # the cost associated with this
             when = row['lineItem/UsageStartDate'][0:10]  # ISO8601
-            owner = row['resourceTags/user:Owner'] or self.UNTAGGED  # owner of the resource, untagged if none specified
+            owner = row['resourceTags/user:Owner'] or row['resourceTags/user:owner'] or self.UNTAGGED  # owner of the resource, untagged if none specified
             name = row['resourceTags/user:Name'] or self.UNTAGGED  # name of the resource, untagged if none specified
 
             if when == today:
