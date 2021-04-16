@@ -41,6 +41,8 @@ import jinja2
 from src.compliance_report import compliance_report
 from src.Boto3_STS_Service import Boto3_STS_Service
 
+import uuid
+
 
 class Report:
     UNTAGGED = '(untagged)'
@@ -239,8 +241,7 @@ class AWSReport(Report):
                 email,
                 account_resource_dict[email]
             )
-            stripped_email = ''.join(c for c in email if c.isalnum())
-            with open(f"{report_dir}{stripped_email}.eml", "w") as eml_file:
+            with open(f"{report_dir}{email[0:email.find('@')]}-{uuid.uuid4().hex}.eml", "w") as eml_file:
                 eml_file.write(eml_text)
 
     def generate_report(self) -> str:
