@@ -42,6 +42,8 @@ from src.compliance_report import compliance_report
 from src.Boto3_STS_Service import Boto3_STS_Service
 
 import uuid
+from pathlib import Path
+import subprocess
 
 
 class Report:
@@ -204,7 +206,7 @@ class AWSReport(Report):
 
         return compliance_list
 
-    def generate_personalized_compliance_reports(self, report_dir="tmp/personalizedEmails/") -> str:
+    def generate_personalized_compliance_reports(self, report_dir="/tmp/personalizedEmails/") -> str:
         # today = self.date.strftime('%Y-%m-%d')
         compliance_list = self.generate_compliance_list("COMPLIANT")
 
@@ -235,7 +237,8 @@ class AWSReport(Report):
                 else:
                     account_resource_dict[resource.get_email()] = [resource]
 
-        # For every email in our dictionary, generate an email report
+        # For every email in our dictionary, generate an email report, make sure the nested directory exists
+        Path(report_dir).mkdir(parents=True, exist_ok=True)
         for email in account_resource_dict:
             eml_text = self.render_personalized_email(
                 email,
@@ -256,8 +259,10 @@ class AWSReport(Report):
         today = self.date.strftime('%Y-%m-%d')
 
         # TODO only run this once a week
-        # generate the personalized reports for COMPLIANT resources
-        self.generate_personalized_compliance_reports()
+        # generate the personalized reports for COMPLIANT resources on Mondays
+        if datetime.strptime(today, "%Y-%m-%d").today().weekday() == 4:
+            self.generate_personalized_compliance_reports()
+            subprocess.call("./scripts/send_personalized_emails.sh")
 
         # create list of noncompliant resources
         noncompliant_resource_by_account = {self.compliance["accounts"][account_id]: [] for account_id in self.compliance["accounts"]}
