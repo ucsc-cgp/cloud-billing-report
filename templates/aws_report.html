@@ -41,13 +41,15 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
         <tr>
             <th>Resource ID</th>
             <th>Product Type</th>
+            <th>Region</th>
         </tr>
     </thead>
     <tbody>
-        {% for resource_id, product_type in noncompliant_resource_by_account[account_id].items()|sort(attribute='1') %}
+        {% for resource in noncompliant_resource_by_account[account_id] %}
             <tr>
-                <td>{{ resource_id }}</td>
-                <td>{{ product_type }}</td>
+                <td>{{ resource.resource_id }}</td>
+                <td>{{ resource.resource_type }}</td>
+                <td>{{ resource.region }}</td>
             </tr>
         {% endfor %}
     </tbody>

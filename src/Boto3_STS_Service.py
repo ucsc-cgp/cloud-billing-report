@@ -24,7 +24,7 @@ class Boto3_STS_Service(object):
         # Get credentials for the assumed role
         self.assume_role_credentials = self.assume_role_object['Credentials']
 
-    def get_boto3_session(self, region):
+    def get_boto3_session(self, region: str, client_type: str):
         # Ensure we have assumed a role (this doesn't check that the session hasn't timed out)
         assert self.assume_role_object is not None
         tmp_credentials = self.assume_role_credentials
@@ -35,7 +35,7 @@ class Boto3_STS_Service(object):
         security_token = tmp_credentials["SessionToken"]
 
         # Start a config client
-        self.assume_role_client = boto3.client('config',
+        self.assume_role_client = boto3.client(client_type,
                                          aws_access_key_id=tmp_access_key,
                                          aws_secret_access_key=tmp_secret_key,
                                          aws_session_token=security_token,

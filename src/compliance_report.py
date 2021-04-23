@@ -1,8 +1,11 @@
+from src.report_resource import report_resource
+
+
 class compliance_report():
     def __init__(self):
         return
 
-    def generate_compliance_list(self, aws_config_client, aws_config_rule, compliance_status='NON_COMPLIANT'):
+    def generate_compliance_list(self, aws_config_client, aws_config_rule, aws_account_id, aws_account_name, aws_region, compliance_status='NON_COMPLIANT'):
         # query AWS Config to get information about resources that are NON_COMPLIANT with a specific config rule
         non_compliant_details = aws_config_client.get_compliance_details_by_config_rule(
             ConfigRuleName=aws_config_rule,
@@ -15,8 +18,14 @@ class compliance_report():
 
             # Add the ResourceId of all NON_COMPLIANT resources to a list
             if len(non_compliant_details["EvaluationResults"]) > 0:
-                non_compliant_resources += [result['EvaluationResultIdentifier']['EvaluationResultQualifier']['ResourceId'] \
-                                           for result in non_compliant_details['EvaluationResults']]
+                for result in non_compliant_details['EvaluationResults']:
+                    resource = report_resource(result['EvaluationResultIdentifier']['EvaluationResultQualifier']['ResourceId'],
+                                               result['EvaluationResultIdentifier']['EvaluationResultQualifier']['ResourceType'],
+                                               aws_account_id,
+                                               aws_account_name,
+                                               aws_region,
+                                               compliance_status)
+                    non_compliant_resources.append(resource)
 
             # if the response contained a NextToken, we need to continue scanning
             if "NextToken" in non_compliant_details:
@@ -30,27 +39,59 @@ class compliance_report():
 
         return non_compliant_resources
 
-    def generate_full_compliance_report(self, boto3_sts_service_object, account_list, arn_list, region_list, aws_config_rule_name, compliance_status='NON_COMPLIANT'):
-        # There should be 1 arn per account
-        assert len(account_list) == len(arn_list)
-        n = len(account_list)
+    def get_resource_tags(self, boto3_sts_service_object, account_region_list, region):
 
-        report_dict = {a: [] for a in account_list}
+        # List of the arns of all the objects we want to query
+        resource_arn_list = []
+
+        # for every resource, add it's arn to the resource_arn_list
+        for resource in account_region_list:
+            resource_arn_list.append(f"arn:aws:s3:::{resource.get_resource_id()}")
+
+        # Create a new boto3 session for retrieving resource tags
+        resource_tag_session = boto3_sts_service_object.get_boto3_session(region, 'resourcegroupstaggingapi')
+        paginator = resource_tag_session.get_paginator("get_resources")
+
+        # Get the list of response dictionaries for each resource in the resource_arn_list
+        resource_response_dict = paginator.paginate(ResourceARNList=resource_arn_list)
+
+        # For every response entry, add the appropriate tag values to the reosuce object
+        for page in resource_response_dict:
+            for resource_dict in page["ResourceTagMappingList"]:
+                for tag in resource_dict["Tags"]:
+                    if "Owner" == tag["Key"] or "owner" == tag["Key"]:
+                        resource.add_owner_tag_value(tag["Key"], tag["Value"])
+
+    def generate_full_compliance_report(self, boto3_sts_service_object, account_id_list, account_name_list, arn_list, region_list,
+                                        aws_config_rule_name, compliance_status='NON_COMPLIANT'):
+        # There should be 1 arn per account
+        assert len(account_id_list) == len(account_name_list)
+        assert len(account_name_list) == len(arn_list)
+        n = len(account_id_list)
+
+        full_resource_list = []
 
         # for every account
         for i in range(n):
 
-            # get the account name and arn
-            account = account_list[i]
+            # get the account name and role arn
+            account_id = account_id_list[i]
+            account_name = account_name_list[i]
             arn = arn_list[i]
 
             # for every region we want to query
             for r in region_list:
                 boto3_sts_service_object.assume_new_role(arn)
-                tmp_session = boto3_sts_service_object.get_boto3_session(r)
-                account_region_list = self.generate_compliance_list(tmp_session, aws_config_rule_name, compliance_status)
+                tmp_session = boto3_sts_service_object.get_boto3_session(r, 'config')
+                account_region_list = self.generate_compliance_list(tmp_session, aws_config_rule_name, account_id, account_name, r,
+                                                                    compliance_status)
+
+                # If we queried for compliant resources, we need to query again for resource tags.
+                if compliance_status == 'COMPLIANT' and len(account_region_list) > 0:
+                    self.get_resource_tags(boto3_sts_service_object, account_region_list, r)
 
                 # add the list of NON_COMPLIANT resources
-                report_dict[account] += account_region_list
+                full_resource_list += account_region_list
 
-        return report_dict
+
+        return full_resource_list
