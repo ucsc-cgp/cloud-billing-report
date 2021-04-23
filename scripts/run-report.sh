@@ -13,7 +13,8 @@ echo "Running container"
 
 # Mount the config file, aws credentials, and a tmp directory into the docker container.
 # The tmp directory will get populated with personalized emails.
-(/usr/local/bin/docker run \
+(/usr/bin/docker pull ${IMAGE} > /dev/null 2>&1 && \
+  /usr/local/bin/docker run \
   -v ${CONFIG}:/config.json:ro \
   -v ~/.aws/credentials:/root/.aws/credentials:ro \
   -e AWS_PROFILE=${AWS_PROFILE} \
