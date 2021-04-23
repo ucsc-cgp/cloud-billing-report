@@ -7,8 +7,6 @@ RUN pip install -r requirements.txt
 COPY templates/ templates/
 COPY report.py .
 COPY src/ src/
-COPY scripts/ scripts/
-RUN chmod +x scripts/send_personalized_emails.sh
 RUN mkdir -p tmp/personalizedEmails/
 
 ENTRYPOINT ["python", "report.py"]

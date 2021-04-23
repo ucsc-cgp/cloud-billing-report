@@ -260,9 +260,8 @@ class AWSReport(Report):
 
         # TODO only run this once a week
         # generate the personalized reports for COMPLIANT resources on Mondays
-        if datetime.strptime(today, "%Y-%m-%d").today().weekday() == 4:
+        if datetime.strptime(today, "%Y-%m-%d").today().weekday() == 0:
             self.generate_personalized_compliance_reports()
-            subprocess.call("./scripts/send_personalized_emails.sh")
 
         # create list of noncompliant resources
         noncompliant_resource_by_account = {self.compliance["accounts"][account_id]: [] for account_id in self.compliance["accounts"]}
