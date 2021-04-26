@@ -28,7 +28,9 @@ for filename in ${PERSONALIZED_EMAIL_DIR}/*.eml; do
     # send the email file
     /usr/sbin/sendmail -t < $filename
     # remove the file
-    rm $filename
+    rm -f $filename
+    # try not to get throttled by gmail
+    sleep 2
 done
 
 echo "Done"
