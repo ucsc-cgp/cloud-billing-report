@@ -14,13 +14,15 @@ echo "Running container"
 # Mount the config file, aws credentials, and a tmp directory into the docker container.
 # The tmp directory will get populated with personalized emails.
 (/usr/bin/docker pull ${IMAGE} > /dev/null 2>&1 && \
-  /usr/local/bin/docker run \
+  /usr/bin/docker run \
   -v ${CONFIG}:/config.json:ro \
   -v ~/.aws/credentials:/root/.aws/credentials:ro \
   -e AWS_PROFILE=${AWS_PROFILE} \
   -v ${PERSONALIZED_EMAIL_DIR}/:/tmp/personalizedEmails \
   ${IMAGE} ${REPORT_TYPE} > ${EMAIL_TMP_FILE} && \
   /usr/sbin/sendmail -t < ${EMAIL_TMP_FILE}) || echo "${REPORT_TYPE},$(date -d 'today - 1day' +%Y-%m-%d)" >> ${FAIL_LOG}
+
+wait 5
 
 for filename in ${PERSONALIZED_EMAIL_DIR}/*.eml; do
     # send the email file
