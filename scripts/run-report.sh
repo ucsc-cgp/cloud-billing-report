@@ -22,7 +22,7 @@ echo "Running container"
   ${IMAGE} ${REPORT_TYPE} > ${EMAIL_TMP_FILE} && \
   /usr/sbin/sendmail -t < ${EMAIL_TMP_FILE}) || echo "${REPORT_TYPE},$(date -d 'today - 1day' +%Y-%m-%d)" >> ${FAIL_LOG}
 
-wait 5
+sleep 5
 
 for filename in ${PERSONALIZED_EMAIL_DIR}/*.eml; do
     # send the email file
