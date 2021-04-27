@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euf
+set -eu
 
 CONFIG=/root/reporting/config.json
 IMAGE=ghcr.io/ucsc-cgp/cloud-billing-report:latest
