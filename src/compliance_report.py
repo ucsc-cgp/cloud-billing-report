@@ -55,12 +55,19 @@ class compliance_report():
         # Get the list of response dictionaries for each resource in the resource_arn_list
         resource_response_dict = paginator.paginate(ResourceARNList=resource_arn_list)
 
-        # For every response entry, add the appropriate tag values to the reosuce object
-        for page in resource_response_dict:
-            for resource_dict in page["ResourceTagMappingList"]:
-                for tag in resource_dict["Tags"]:
-                    if "Owner" == tag["Key"] or "owner" == tag["Key"]:
-                        resource.add_owner_tag_value(tag["Key"], tag["Value"])
+        # TODO: This is pretty ugly, should be fixed up, what this does is:
+        # 1. For every page in our pagination
+        # 2. For every resource reported on each page
+        # 3. Match the resource returned with a report_resource object in account_region_list
+        # 4. Look through all the tags of the resource and update the report_resource object with the email tagging info.
+        for page in resource_response_dict:  # for every page
+            for resource_dict in page["ResourceTagMappingList"]:  # for every resource on that page
+                resource_arn = resource_dict["ResourceARN"]  # get the ARN associated with the resource
+                for resource in account_region_list:  # look through all our resources and match by ARN
+                    if f"arn:aws:s3:::{resource.get_resource_id()}" == resource_arn:
+                        for tag in resource_dict["Tags"]:
+                            if "Owner" == tag["Key"] or "owner" == tag["Key"]:
+                                resource.add_owner_tag_value(tag["Key"], tag["Value"])
 
     def generate_full_compliance_report(self, boto3_sts_service_object, account_id_list, account_name_list, arn_list, region_list,
                                         aws_config_rule_name, compliance_status='NON_COMPLIANT'):
