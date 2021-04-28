@@ -35,7 +35,10 @@ class report_resource:
 
         # If the compliant tag does not contain the word 'shared' then this is an email address
         if "shared" not in lowercase_tag:
-            self.email = tag_value
+            if tag_value == 'cluster-admin@soe.ucsc.edu':  # route all cluster admin emails to erich
+                self.email = 'weiler@soe.ucsc.edu'
+            else:
+                self.email = tag_value
 
     def set_daily_cost(self, val: float):
         # if the daily cost is already set, we shouldn't be setting it again
