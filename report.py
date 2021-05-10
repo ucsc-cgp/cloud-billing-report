@@ -181,7 +181,7 @@ class AWSReport(Report):
             with gzip.open(tmp.name, 'r') as report_fp:
                 return report_fp.read().decode().splitlines()
 
-    def generate_compliance_list(self, compliance_status='NON_COMPLIANT') -> list:
+    def generate_compliance_list(self) -> list:
 
         # start service
         bss = Boto3_STS_Service()
@@ -198,38 +198,18 @@ class AWSReport(Report):
             account_id_list.append(k)
             account_name_list.append(compliance_config["accounts"][k])
             arn_list.append(f"arn:aws:iam::{k}:role/{compliance_config['iam_role_name']}")
-        aws_config_rule_name = "custodian-mandatory_tag_enforcer_s3"
 
         cr = compliance_report()
-        compliance_list = cr.generate_full_compliance_report(bss, account_id_list, account_name_list, arn_list, region_list,
-                                                             aws_config_rule_name, compliance_status)
+        compliance_list = cr.generate_full_compliance_report(bss, account_id_list, account_name_list, arn_list, region_list)
 
         return compliance_list
 
-    def generate_personalized_compliance_reports(self, report_dir="/tmp/personalizedEmails/") -> str:
-        # today = self.date.strftime('%Y-%m-%d')
-        compliance_list = self.generate_compliance_list("COMPLIANT")
-
+    def generate_personalized_compliance_reports(self, compliant_resources: list, report_dir="/tmp/personalizedEmails/") -> str:
         # TODO Most billing reports are showing $0.00 for the S3 costs... may need to rethink
-        # Match the billing data from the csv to COMPLIANT resources
-        # for row in report_csv:
-        #     account = self.accounts.get(row['lineItem/UsageAccountId'], '(unknown)')  # account for resource
-        #     resource_name = row['lineItem/ResourceId']  # name of the resource
-        #     when = row['lineItem/UsageStartDate'][0:10]  # ISO8601
-        #     amount = Decimal(row['lineItem/BlendedCost'])  # the cost associated with this
-        #
-        #     for resource in compliance_list:
-        #         # check to see if the csv row contains information about this resource
-        #         if resource.is_match(account, resource_name):
-        #             if when == today:
-        #                 resource.set_daily_cost(amount)
-        #             elif when < today:
-        #                 resource.add_to_monthly_cost(amount)
-        #             break
-
         # Create a dictionary, where the key is the email address and the value is the list of resources
         account_resource_dict = {}
-        for resource in compliance_list:
+        for resource in compliant_resources:
+
             # The email address can be none if the tag included 'shared'
             if resource.get_email() is not None:
                 if resource.get_email() in account_resource_dict:
@@ -258,16 +238,18 @@ class AWSReport(Report):
         ec2_by_name_today = collections.defaultdict(Decimal)
         today = self.date.strftime('%Y-%m-%d')
 
-        # TODO only run this once a week
-        # generate the personalized reports for COMPLIANT resources on Mondays == 0
-        if datetime.strptime(today, "%Y-%m-%d").today().weekday() < 10:
-            self.generate_personalized_compliance_reports()
+        # Create a list of resource objects based on their compliance status
+        compliance_list = self.generate_compliance_list()
+        compliant_resources = [r for r in compliance_list if r.get_compliance_status() == "COMPLIANT"]
+        noncompliant_resources = [r for r in compliance_list if r.get_compliance_status() == "NON_COMPLIANT"]
+
+        # *** Currently set to run everyday ***
+        # For Monday only reports: 'if datetime.strptime(today, "%Y-%m-%d").today().weekday() == 0'
+        self.generate_personalized_compliance_reports(compliant_resources)
 
         # create list of noncompliant resources
         noncompliant_resource_by_account = {self.compliance["accounts"][account_id]: [] for account_id in self.compliance["accounts"]}
-        compliance_list = self.generate_compliance_list("NON_COMPLIANT")
-        for resource in compliance_list:
-            assert resource.get_compliance_status() == "NON_COMPLIANT"
+        for resource in noncompliant_resources:
             noncompliant_resource_by_account[resource.get_account_name()].append(resource)
 
         # Populate the dictionaries used for the daily global report

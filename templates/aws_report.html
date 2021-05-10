@@ -47,7 +47,7 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
     <tbody>
         {% for resource in noncompliant_resource_by_account[account_id] %}
             <tr>
-                <td>{{ resource.resource_id }}</td>
+                <td>{{ resource.resource_arn }}</td>
                 <td>{{ resource.resource_type }}</td>
                 <td>{{ resource.region }}</td>
             </tr>

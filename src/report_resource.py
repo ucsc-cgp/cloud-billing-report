@@ -1,44 +1,55 @@
-
 class report_resource:
 
-    def __init__(self, resource_id: str, resource_type: str, account_id:str, account_name: str, region: str, compliance_status: str):
-        self.resource_id = resource_id
+    def __init__(self, resource_arn: str, resource_type: str, account_id: str, account_name: str, region: str):
+        self.resource_arn = resource_arn
         self.resource_type = resource_type
         self.account_id = account_id
         self.account_name = account_name
         self.region = region
-        self.compliance_status = compliance_status
+        self.compliance_status = None
         self.tag_status = {
             "Owner": None,
-            "owner": None
+            "owner": None,
+            "noncompliant-maid-service": None
         }
         self.email = None
+        self.is_shared = False
 
         self.daily_cost = 0
         self.monthly_cost = 0
 
     # simple matching between this resource object and a billing report CSV row
-    def is_match(self, account_id: str, resource_id: str):
-        return self.account_id == account_id and self.resource_id == resource_id
+    def is_match(self, account_id: str, resource_arn: str):
+        return self.account_id == account_id and self.resource_arn == resource_arn
 
-    def add_owner_tag_value(self, tag: str, tag_value: str):
+    # Set the compliance status of this resource. If no value is provided, calculate the compliance status based on
+    # other resource properties.
+    def set_compliance_status(self, compliance_status=None):
+        if compliance_status is not None:
+            self.compliance_status = compliance_status
+        elif (self.email is not None) or self.is_shared:
+            self.compliance_status = "COMPLIANT"
+        else:
+            self.compliance_status = "NON_COMPLIANT"
 
-        # Tag must be 'Owner' or 'owner'
+    # Add a resource tag to the list of tags of this resource
+    def add_tag_value(self, tag: str, tag_value: str):
         assert tag in self.tag_status
 
-        # Add the tag value to the dictionary. This value may not be an email address, it can be 'shared'.
         self.tag_status[tag] = tag_value
-        self.set_email_if_valid(tag_value)
+        if tag == "Owner" or tag == "owner":
+            self.set_email_if_valid(tag_value)
 
+    # Set the email property if the provided tag value looks like an email address
     def set_email_if_valid(self, tag_value: str):
-        lowercase_tag = tag_value.lower()
-
-        # If the compliant tag does not contain the word 'shared' then this is an email address
-        if "shared" not in lowercase_tag:
-            if tag_value == 'cluster-admin@soe.ucsc.edu':  # route all cluster admin emails to erich
-                self.email = 'weiler@soe.ucsc.edu'
-            else:
-                self.email = tag_value
+        if tag_value is None:
+            return
+        elif tag_value == 'cluster-admin@soe.ucsc.edu':  # route all cluster admin emails to erich
+            self.email = 'weiler@soe.ucsc.edu'
+        elif tag_value.partition("@")[2].find(".") != -1:  # check if the tag 'looks' like an email
+            self.email = tag_value
+        elif "shared" in tag_value.lower():
+            self.is_shared = True
 
     def set_daily_cost(self, val: float):
         # if the daily cost is already set, we shouldn't be setting it again
@@ -49,8 +60,8 @@ class report_resource:
     def add_to_monthly_cost(self, val: float):
         self.monthly_cost += val
 
-    def get_resource_id(self):
-        return self.resource_id
+    def get_resource_arn(self):
+        return self.resource_arn
 
     def get_resource_type(self):
         return self.resource_type
