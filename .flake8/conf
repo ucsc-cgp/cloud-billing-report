@@ -1,5 +1,5 @@
 [flake8]
-max-line-length=120
+max-line-length=175
 ; Since flake8's `--extend-select` argument has yet to be implemented,
 ; (https://gitlab.com/pycqa/flake8/-/issues/365)
 ; we must explicitly list the error classes enabled by default in order not to
