@@ -5,6 +5,20 @@ class compliance_report():
     def __init__(self):
         return
 
+    # It's really silly that I have to do this. The boto3 call should return the resource type
+    # in the response dict, especially because I provide a list of resource types in the first place
+    def get_resource_type(self, resource_arn):
+        if ":instance/" in resource_arn:
+            return "ec2:instance"
+        elif ":volume/" in resource_arn:
+            return "ec2:volume"
+        elif ":snapshot/" in resource_arn:
+            return "ec2:snapshot"
+        elif "s3" in resource_arn:
+            return "s3:bucket"
+
+        return ""
+
     def get_resource_by_tags(self, boto3_sts_service_object, account_id, account_name, region):
 
         # Create a new boto3 session for retrieving resource tags
@@ -12,7 +26,7 @@ class compliance_report():
         paginator = resource_tag_session.get_paginator("get_resources")
 
         # These are the types of resources we are querying for
-        resource_type_filters = ["s3"]
+        resource_type_filters = ["s3", "ec2:instance", "ec2:volume", "ec2:snapshot"]
 
         # Get the list of response dictionaries for each resource of the desired type
         resource_response_dict = paginator.paginate(ResourceTypeFilters=resource_type_filters)
@@ -22,7 +36,7 @@ class compliance_report():
             for resource_dict in page["ResourceTagMappingList"]:  # for every resource on that page
                 resource_arn = resource_dict["ResourceARN"]  # get the ARN associated with the resource
                 resource = report_resource(resource_arn,
-                                           resource_arn.partition("aws:")[2].partition(":::")[0],
+                                           self.get_resource_type(resource_arn),
                                            account_id,
                                            account_name,
                                            region)
