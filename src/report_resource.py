@@ -27,10 +27,10 @@ class report_resource:
     def set_compliance_status(self, compliance_status=None):
         if compliance_status is not None:
             self.compliance_status = compliance_status
-        elif (self.email is not None) or self.is_shared:
-            self.compliance_status = "COMPLIANT"
-        else:
+        elif self.tag_status["noncompliant-maid-service"] is not None:
             self.compliance_status = "NON_COMPLIANT"
+        else:
+            self.compliance_status = "COMPLIANT"
 
     # Add a resource tag to the list of tags of this resource
     def add_tag_value(self, tag: str, tag_value: str):
