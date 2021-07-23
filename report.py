@@ -43,7 +43,7 @@ from src.Boto3_STS_Service import Boto3_STS_Service
 
 import uuid
 from pathlib import Path
-import subprocess
+from src.report_resource import report_resource
 
 
 class Report:
@@ -236,6 +236,7 @@ class AWSReport(Report):
         ec2_owner_by_account_today = nested_dict()
         ec2_by_name = collections.defaultdict(Decimal)
         ec2_by_name_today = collections.defaultdict(Decimal)
+        resource_by_id = {}
         today = self.date.strftime('%Y-%m-%d')
 
         # Create a list of resource objects based on their compliance status
@@ -260,6 +261,18 @@ class AWSReport(Report):
             when = row['lineItem/UsageStartDate'][0:10]  # ISO8601
             owner = row['resourceTags/user:Owner'] or row['resourceTags/user:owner'] or self.UNTAGGED  # owner of the resource, untagged if none specified
             name = row['resourceTags/user:Name'] or self.UNTAGGED  # name of the resource, untagged if none specified
+            resource_id = row['lineItem/ResourceId']  # resource id, not necessarily the arn
+
+            # monthly cost summary of the resource
+            if len(resource_id) > 0:
+                if resource_id not in resource_by_id:
+                    resource_by_id[resource_id] = report_resource(resource_id, service, account, '', '')
+
+                if row['resourceTags/user:Owner']:
+                    resource_by_id[resource_id].add_tag_value("Owner", row['resourceTags/user:Owner'])
+                elif row['resourceTags/user:owner']:
+                    resource_by_id[resource_id].add_tag_value("owner", row['resourceTags/user:owner'])
+                resource_by_id[resource_id].add_to_monthly_cost(amount)
 
             if when == today:
                 service_by_account_today[account][service] += amount
@@ -275,6 +288,8 @@ class AWSReport(Report):
                     ec2_by_name[name] += amount
                     ec2_owner_by_account[account][owner] += amount
 
+        top_resources = dict(sorted(resource_by_id.items(), key=lambda x: x[1].monthly_cost, reverse=True)[:30])
+
         return self.render_email(
             self.email_recipients,
             service_by_account=service_by_account,
@@ -283,7 +298,8 @@ class AWSReport(Report):
             ec2_owner_by_account_today=ec2_owner_by_account_today,
             ec2_by_name=ec2_by_name,
             ec2_by_name_today=ec2_by_name_today,
-            noncompliant_resource_by_account=noncompliant_resource_by_account
+            noncompliant_resource_by_account=noncompliant_resource_by_account,
+            top_resources=top_resources
         )
 
 
