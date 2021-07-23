@@ -113,30 +113,25 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
     </table>
 {% endfor %}
 
-<h2>Project-based accounting based on the "Name" tag</h2>
+<h2>Resource accounting by cost</h2>
 <table>
     <thead>
         <tr>
-            <th>Tag</th>
+            <th>Resource ID</th>
+            <th>Service</th>
+            <th>Email</th>
             <th>{{ report_date|ym }}</th>
-            <th>{{ report_date|ymd }}</th>
         </tr>
     </thead>
     <tbody>
-        {% for name, amount in ec2_by_name.items()|sort %}
+        {% for id, resource in top_resources.items()|sort(attribute='1.monthly_cost', reverse=True) %}
         <tr>
-            <td>{{ name }}</td>
-            <td>{{ amount|print_amount }}</td>
-            <td>{{ ec2_by_name_today[name]|print_diff }}</td>
+            <td>{{ resource.resource_arn }}</td>
+            <td>{{ resource.resource_type }}</td>
+            <td>{{ resource.email if resource.email is not none else '-' }}</td>
+            <td>{{ resource.monthly_cost|print_amount }}</td>
         </tr>
         {% endfor %}
     </tbody>
-    <tfoot>
-        <tr>
-            <td>Grand total</td>
-            <td>{{ ec2_by_name|sum_values|print_amount }}</td>
-            <td>{{ ec2_by_name_today|sum_values|print_amount }}</td>
-        </tr>
-    </tfoot>
 </table>
 {% endblock main %}
