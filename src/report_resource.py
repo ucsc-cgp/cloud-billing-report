@@ -18,6 +18,19 @@ class report_resource:
         self.daily_cost = 0
         self.monthly_cost = 0
 
+        self.url = ''
+
+    # sets the resource url if possible, otherwise just links to the dashboard
+    def set_resource_url(self):
+        if self.resource_type == "Amazon Elastic Compute Cloud":
+            self.url = f"https://console.aws.amazon.com/ec2/v2/home?region={self.region}#InstanceDetails:instanceId={self.resource_arn}"
+        elif self.resource_type == "Amazon Simple Storage Service":
+            self.url = f"https://s3.console.aws.amazon.com/s3/buckets/{self.resource_arn}?region={self.region}&tab=objects"
+        elif self.resource_type == "Amazon Elasticsearch Service":
+            self.url = f"https://console.aws.amazon.com/es/home?region={self.region}#"
+        else:
+            self.url = f"https://console.aws.amazon.com/console/home?region={self.region}"
+
     # simple matching between this resource object and a billing report CSV row
     def is_match(self, account_id: str, resource_arn: str):
         return self.account_id == account_id and self.resource_arn == resource_arn

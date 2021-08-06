@@ -262,11 +262,13 @@ class AWSReport(Report):
             owner = row['resourceTags/user:Owner'] or row['resourceTags/user:owner'] or self.UNTAGGED  # owner of the resource, untagged if none specified
             name = row['resourceTags/user:Name'] or self.UNTAGGED  # name of the resource, untagged if none specified
             resource_id = row['lineItem/ResourceId']  # resource id, not necessarily the arn
+            region = row['product/region'] # The region the product was billed from
 
             # monthly cost summary of the resource
             if len(resource_id) > 0:
                 if resource_id not in resource_by_id:
-                    resource_by_id[resource_id] = report_resource(resource_id, service, account, '', '')
+                    resource_by_id[resource_id] = report_resource(resource_id, service, '', account, region)
+                    resource_by_id[resource_id].set_resource_url()
 
                 if row['resourceTags/user:Owner']:
                     resource_by_id[resource_id].add_tag_value("Owner", row['resourceTags/user:Owner'])
