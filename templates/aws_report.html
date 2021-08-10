@@ -3,6 +3,7 @@
 {% block main %}
 Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
 
+{# Prints the total amount spent by each account #}
 <h2>Totals by account</h2>
 <table>
     <thead>
@@ -30,102 +31,20 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
     </tfoot>
 </table>
 
-{% for account_id, services in service_by_account.items()|sort %}
-<a name='{{ account_id }}' id='{{ account_id }}'></a>
-<h2>Report for account {{ account_id }}</h2>
-
-    {%  if account_id in noncompliant_resource_by_account %}
-    <table>
-    <caption>Non-compliant Resource Breakdown (Compliance requires the resources to have an email address under the Owner tag.)</caption>
-    <thead>
-        <tr>
-            <th>Resource ID</th>
-            <th>Product Type</th>
-            <th>Region</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for resource in noncompliant_resource_by_account[account_id] %}
-            <tr>
-                <td>{{ resource.resource_arn }}</td>
-                <td>{{ resource.resource_type }}</td>
-                <td>{{ resource.region }}</td>
-            </tr>
-        {% endfor %}
-    </tbody>
-    </table>
-    {% endif %}
-
-    {% if service_by_account[account_id].get('Amazon Elastic Compute Cloud') %}
-    <table>
-        <caption>EC2 Breakdown by Owner</caption>
-        <thead>
-            <tr>
-                <th>Owner</th>
-                <th>{{ report_date|ym }}</th>
-                <th>{{ report_date|ymd }}</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for owner, amount in ec2_owner_by_account[account_id].items()|sort %}
-            <tr>
-                <td>{{ owner }}</td>
-                <td>{{ amount|print_amount }}</td>
-                <td>{{ ec2_owner_by_account_today[account_id][owner]|print_diff }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-        <tfoot>
-            <tr>
-                <td>Grand total</td>
-                <td>{{ ec2_owner_by_account[account_id]|sum_values|print_amount }}</td>
-                <td>{{ ec2_owner_by_account_today[account_id]|sum_values|print_diff }}</td>
-            </tr>
-        </tfoot>
-    </table>
-    <br>
-    {% endif %}
-    <table>
-        <caption>Service Summary</caption>
-        <thead>
-            <tr>
-                <th>Service</th>
-                <th>{{ report_date|ym }}</th>
-                <th>{{ report_date|ymd }}</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for service, amount in services.items()|sort %}
-            <tr>
-                <td>{{ service }}</td>
-                <td>{{ amount|print_amount }}</td>
-                <td>{{ service_by_account_today[account_id][service]|print_diff }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-        <tfoot>
-            <tr>
-                <td>Grand total</td>
-                <td>{{ service_by_account[account_id]|sum_values|print_amount }}</td>
-                <td>{{ service_by_account_today[account_id]|sum_values|print_diff }}</td>
-            </tr>
-        </tfoot>
-    </table>
-{% endfor %}
-
+{# Prints the most expesnive resources for the current month #}
 <h2>Resource accounting by cost</h2>
 <table>
     <thead>
-        <tr>
-            <th>Resource ID</th>
-            <th>Account</th>
-            <th>Service</th>
-            <th>Email</th>
-            <th>{{ report_date|ym }}</th>
-        </tr>
+    <tr>
+        <th>Resource ID</th>
+        <th>Account</th>
+        <th>Service</th>
+        <th>Email</th>
+        <th>{{ report_date|ym }}</th>
+    </tr>
     </thead>
     <tbody>
-        {% for id, resource in top_resources.items()|sort(attribute='1.monthly_cost', reverse=True) %}
+    {% for id, resource in top_resources.items()|sort(attribute='1.monthly_cost', reverse=True) %}
         <tr>
             <td><a href="{{ resource.url }}">{{ resource.resource_arn }}</a></td>
             <td>{{ resource.account_name }}</td>
@@ -133,7 +52,98 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
             <td>{{ resource.email if resource.email is not none else ("Shared" if resource.is_shared else "-")  }}</td>
             <td>{{ resource.monthly_cost|print_amount }}</td>
         </tr>
-        {% endfor %}
+    {% endfor %}
     </tbody>
 </table>
+
+{# Prints the usage costs for various AWS services #}
+<h2>Monthly summary by service</h2>
+<div class="row">
+    {% for service, usage_dict in summary_by_service.items()|sort %}
+        <div class="column">
+            <h3>{{ service }}</h3>
+            <table>
+                <thead>
+                <tr>
+                    <th>Usage Type</th>
+                    <th>Cost</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for usage_type, cost in usage_dict.items()|sort(attribute='1', reverse=True) %}
+                    <tr>
+                        <td>{{ usage_type }}</td>
+                        <td>{{ cost|print_amount }}</td>
+                    </tr>
+                    </tbody>
+                {% endfor %}
+                <tfoot>
+                <tr>
+                    <td>Grand total</td>
+                    <td>{{ usage_dict|sum_values|print_amount }}</td>
+                </tr>
+                </tfoot>
+            </table>
+        </div>
+    {% endfor %}
+</div>
+
+<div>
+    {% for account_id, services in service_by_account.items()|sort %}
+        <div class="accountRow">
+            <a name='{{ account_id }}' id='{{ account_id }}'></a>
+            <h2>Report for account {{ account_id }}</h2>
+
+            {%  if account_id in noncompliant_resource_by_account %}
+                <table>
+                    <caption>Non-compliant Resource Breakdown (Compliance requires the resources to have an email address under the Owner tag.)</caption>
+                    <thead>
+                    <tr>
+                        <th>Resource ID</th>
+                        <th>Product Type</th>
+                        <th>Region</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for resource in noncompliant_resource_by_account[account_id] %}
+                        <tr>
+                            <td>{{ resource.resource_arn }}</td>
+                            <td>{{ resource.resource_type }}</td>
+                            <td>{{ resource.region }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            {% endif %}
+
+            <table>
+                <caption>Service Summary</caption>
+                <thead>
+                <tr>
+                    <th>Service</th>
+                    <th>{{ report_date|ym }}</th>
+                    <th>{{ report_date|ymd }}</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for service, amount in services.items()|sort %}
+                    <tr>
+                        <td>{{ service }}</td>
+                        <td>{{ amount|print_amount }}</td>
+                        <td>{{ service_by_account_today[account_id][service]|print_diff }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+                <tfoot>
+                <tr>
+                    <td>Grand total</td>
+                    <td>{{ service_by_account[account_id]|sum_values|print_amount }}</td>
+                    <td>{{ service_by_account_today[account_id]|sum_values|print_diff }}</td>
+                </tr>
+                </tfoot>
+            </table>
+        </div>
+    {% endfor %}
+</div>
+
 {% endblock main %}

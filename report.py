@@ -236,6 +236,7 @@ class AWSReport(Report):
         ec2_owner_by_account_today = nested_dict()
         ec2_by_name = collections.defaultdict(Decimal)
         ec2_by_name_today = collections.defaultdict(Decimal)
+        summary_by_service = nested_dict()
         resource_by_id = {}
         today = self.date.strftime('%Y-%m-%d')
 
@@ -263,6 +264,7 @@ class AWSReport(Report):
             name = row['resourceTags/user:Name'] or self.UNTAGGED  # name of the resource, untagged if none specified
             resource_id = row['lineItem/ResourceId']  # resource id, not necessarily the arn
             region = row['product/region'] # The region the product was billed from
+            usage_type = row['lineItem/UsageType']
 
             # monthly cost summary of the resource
             if len(resource_id) > 0:
@@ -279,29 +281,23 @@ class AWSReport(Report):
             if when == today:
                 service_by_account_today[account][service] += amount
                 service_by_account[account][service] += amount
-                if service == 'Amazon Elastic Compute Cloud':
-                    ec2_by_name_today[name] += amount
-                    ec2_by_name[name] += amount
-                    ec2_owner_by_account_today[account][owner] += amount
-                    ec2_owner_by_account[account][owner] += amount
-            elif when < today:
-                service_by_account[account][service] += amount
-                if service == 'Amazon Elastic Compute Cloud':
-                    ec2_by_name[name] += amount
-                    ec2_owner_by_account[account][owner] += amount
+            service_by_account[account][service] += amount
+
+            # Only look at the big spender services
+            if service in self.RESOURCE_SHORTHAND:
+                summary_by_service[service][usage_type] += amount
 
         top_resources = dict(sorted(resource_by_id.items(), key=lambda x: x[1].monthly_cost, reverse=True)[:30])
+        for service in summary_by_service:
+            summary_by_service[service] = dict(sorted(summary_by_service[service].items(), key=lambda x: x[1], reverse=True)[:20])
 
         return self.render_email(
             self.email_recipients,
             service_by_account=service_by_account,
             service_by_account_today=service_by_account_today,
-            ec2_owner_by_account=ec2_owner_by_account,
-            ec2_owner_by_account_today=ec2_owner_by_account_today,
-            ec2_by_name=ec2_by_name,
-            ec2_by_name_today=ec2_by_name_today,
             noncompliant_resource_by_account=noncompliant_resource_by_account,
-            top_resources=top_resources
+            top_resources=top_resources,
+            summary_by_service=summary_by_service
         )
 
 
