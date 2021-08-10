@@ -3,33 +3,58 @@
 {% block main %}
 Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
 
-{# Prints the total amount spent by each account #}
-<h2>Totals by account</h2>
-<table>
-    <thead>
-        <tr>
-            <th>Account</th>
-            <th>{{ report_date|ym }}</th>
-            <th>{{ report_date|ymd }}</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for account_id, services in service_by_account.items()|sort %}
-        <tr>
-            <td><a href='#{{ account_id }}'>{{ account_id }}</a></td>
-            <td>{{ service_by_account[account_id]|sum_values|print_amount }}</td>
-            <td>{{ service_by_account_today[account_id]|sum_values|print_diff }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-    <tfoot>
-        <tr>
-            <td>Grand total</td>
-            <td>{{ service_by_account|nested_sum_values|print_amount }}</td>
-            <td>{{ service_by_account_today|nested_sum_values|print_amount }}</td>
-        </tr>
-    </tfoot>
-</table>
+<div class="row">
+    <div class="column">
+        {# Prints the total amount spent by each account #}
+        <h2>Totals by account</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Account</th>
+                <th>{{ report_date|ym }}</th>
+                <th>{{ report_date|ymd }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for account_id, services in service_by_account.items()|sort %}
+                <tr>
+                    <td><a href='#{{ account_id }}'>{{ account_id }}</a></td>
+                    <td>{{ service_by_account[account_id]|sum_values|print_amount }}</td>
+                    <td>{{ service_by_account_today[account_id]|sum_values|print_diff }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+            <tfoot>
+            <tr>
+                <td>Grand total</td>
+                <td>{{ service_by_account|nested_sum_values|print_amount }}</td>
+                <td>{{ service_by_account_today|nested_sum_values|print_amount }}</td>
+            </tr>
+            </tfoot>
+        </table>
+    </div>
+    <div class="column">
+        {# Prints the total amount spent by each service #}
+        <h2>Totals by service</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Service</th>
+                <th>{{ report_date|ym }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for service, cost in total_service_cost.items()|sort(attribute='1', reverse=True) %}
+                <tr>
+                    <td>{{ service }}</td>
+                    <td>{{ cost|print_amount }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
 
 {# Prints the most expesnive resources for the current month #}
 <h2>Resource accounting by cost</h2>
@@ -57,7 +82,7 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
 </table>
 
 {# Prints the usage costs for various AWS services #}
-<h2>Monthly summary by service</h2>
+<h2>Monthly summary by service usage types</h2>
 <div class="row">
     {% for service, usage_dict in summary_by_service.items()|sort %}
         <div class="column">

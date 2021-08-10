@@ -232,11 +232,8 @@ class AWSReport(Report):
         report_csv = csv.DictReader(report_csv_lines)
         service_by_account = nested_dict()
         service_by_account_today = nested_dict()
-        ec2_owner_by_account = nested_dict()
-        ec2_owner_by_account_today = nested_dict()
-        ec2_by_name = collections.defaultdict(Decimal)
-        ec2_by_name_today = collections.defaultdict(Decimal)
         summary_by_service = nested_dict()
+        total_service_cost = collections.defaultdict(Decimal)
         resource_by_id = {}
         today = self.date.strftime('%Y-%m-%d')
 
@@ -286,10 +283,13 @@ class AWSReport(Report):
             # Only look at the big spender services
             if service in self.RESOURCE_SHORTHAND:
                 summary_by_service[service][usage_type] += amount
+            total_service_cost[service] += amount
 
         top_resources = dict(sorted(resource_by_id.items(), key=lambda x: x[1].monthly_cost, reverse=True)[:30])
+        total_service_cost = dict(sorted(total_service_cost.items(), key=lambda x: x[1], reverse=True)[:min(len(total_service_cost.items()), 20)])
         for service in summary_by_service:
-            summary_by_service[service] = dict(sorted(summary_by_service[service].items(), key=lambda x: x[1], reverse=True)[:20])
+            summary_by_service[service] = dict(sorted([(k,v) for k,v in summary_by_service[service].items() if v > 1], key=lambda x: x[1], reverse=True))
+
 
         return self.render_email(
             self.email_recipients,
@@ -297,7 +297,8 @@ class AWSReport(Report):
             service_by_account_today=service_by_account_today,
             noncompliant_resource_by_account=noncompliant_resource_by_account,
             top_resources=top_resources,
-            summary_by_service=summary_by_service
+            summary_by_service=summary_by_service,
+            total_service_cost=total_service_cost
         )
 
 
