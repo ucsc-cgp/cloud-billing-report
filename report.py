@@ -232,12 +232,13 @@ class AWSReport(Report):
         report_csv = csv.DictReader(report_csv_lines)
         service_by_account = nested_dict()
         service_by_account_today = nested_dict()
-        ec2_owner_by_account = nested_dict()
-        ec2_owner_by_account_today = nested_dict()
-        ec2_by_name = collections.defaultdict(Decimal)
-        ec2_by_name_today = collections.defaultdict(Decimal)
+        summary_by_service = nested_dict()
+        total_service_cost = collections.defaultdict(Decimal)
+        total_s3_storage = collections.defaultdict(float)
         resource_by_id = {}
+
         today = self.date.strftime('%Y-%m-%d')
+        days = datetime.now().day
 
         # Create a list of resource objects based on their compliance status
         compliance_list = self.generate_compliance_list()
@@ -263,6 +264,7 @@ class AWSReport(Report):
             name = row['resourceTags/user:Name'] or self.UNTAGGED  # name of the resource, untagged if none specified
             resource_id = row['lineItem/ResourceId']  # resource id, not necessarily the arn
             region = row['product/region'] # The region the product was billed from
+            usage_type = row['lineItem/UsageType']
 
             # monthly cost summary of the resource
             if len(resource_id) > 0:
@@ -279,29 +281,52 @@ class AWSReport(Report):
             if when == today:
                 service_by_account_today[account][service] += amount
                 service_by_account[account][service] += amount
-                if service == 'Amazon Elastic Compute Cloud':
-                    ec2_by_name_today[name] += amount
-                    ec2_by_name[name] += amount
-                    ec2_owner_by_account_today[account][owner] += amount
-                    ec2_owner_by_account[account][owner] += amount
-            elif when < today:
-                service_by_account[account][service] += amount
-                if service == 'Amazon Elastic Compute Cloud':
-                    ec2_by_name[name] += amount
-                    ec2_owner_by_account[account][owner] += amount
+            service_by_account[account][service] += amount
+
+            # Only look at the big spender services
+            if service in self.RESOURCE_SHORTHAND:
+                summary_by_service[service][usage_type] += amount
+            total_service_cost[service] += amount
+
+            # The description contains the billing
+            description = row['lineItem/LineItemDescription']
+
+            # This is pretty gross, but AWS doesn't have a single standardized 'you were charged for X GB' column,
+            # so we need to parse out the rows that are charges for timed storage, where we are charged per byte per hour
+            # and the billing unit is in the form of GB.
+            if service == "Amazon Simple Storage Service" and \
+                    "timedstorage" in usage_type.lower() and \
+                    'bytehrs' in usage_type.lower() and \
+                    'per GB' in description and \
+                    description[0] == '$':
+
+                # remove any region prefix
+                usage_type_partition = usage_type.partition("TimedStorage")
+                new_usage_type = usage_type_partition[1] + usage_type_partition[2]
+
+                # dollars per GB per hour
+                dollars_per_GB = float(description[1:description.find(' ')])
+                GB_per_dollar = 1 / dollars_per_GB
+
+                # We are charged every 1 hour for each byte we have, at a rate of GB / dollar
+                total_s3_storage[new_usage_type] += float(amount) / float(row['lineItem/BlendedRate'])
 
         top_resources = dict(sorted(resource_by_id.items(), key=lambda x: x[1].monthly_cost, reverse=True)[:30])
+        total_service_cost = dict(sorted(total_service_cost.items(), key=lambda x: x[1], reverse=True)[:min(len(total_service_cost.items()), 20)])
+        for service in summary_by_service:
+            summary_by_service[service] = dict(sorted([(k,v) for k,v in summary_by_service[service].items() if v > 1], key=lambda x: x[1], reverse=True))
+
 
         return self.render_email(
             self.email_recipients,
             service_by_account=service_by_account,
             service_by_account_today=service_by_account_today,
-            ec2_owner_by_account=ec2_owner_by_account,
-            ec2_owner_by_account_today=ec2_owner_by_account_today,
-            ec2_by_name=ec2_by_name,
-            ec2_by_name_today=ec2_by_name_today,
             noncompliant_resource_by_account=noncompliant_resource_by_account,
-            top_resources=top_resources
+            top_resources=top_resources,
+            summary_by_service=summary_by_service,
+            total_service_cost=total_service_cost,
+            total_s3_storage=total_s3_storage,
+            days=days
         )
 
 

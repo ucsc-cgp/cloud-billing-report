@@ -42,7 +42,18 @@
 		h1 { font-size:2em; margin:.67em 0; }
 		tbody > tr:hover, tfoot > tr:hover { background-color: #f2f2f2; }
 		tfoot { font-weight: 700; }
-		.unusual { font-weight: 700; color: red; }
+        * {
+            box-sizing: border-box;
+        }
+
+        .row {
+            display: flex;
+        }
+        .column {
+            flex-shrink: 1;
+            padding: 5px;
+        }
+        {#div.accountRow:nth-child(even) {background: #d9dadb}#}
 	</style>
 </head>
 <body>
