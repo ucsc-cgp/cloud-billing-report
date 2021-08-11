@@ -111,6 +111,32 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
             </table>
         </div>
     {% endfor %}
+    <div class="column">
+
+        <h2>Estimated storage in GB</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Type</th>
+                <th>GB Estimate</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for usage, storage in total_s3_storage.items()|sort(attribute='1', reverse=True) %}
+                <tr>
+                    <td>{{ usage }}</td>
+                    <td>{{ (storage / days) |int }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+            <tfoot>
+            <tr>
+                <td>Total</td>
+                <td>{{ ((total_s3_storage|sum_values|int) / days)|int }}</td>
+            </tr>
+            </tfoot>
+        </table>
+    </div>
 </div>
 
 <div>
