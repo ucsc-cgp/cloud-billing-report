@@ -112,8 +112,7 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
         </div>
     {% endfor %}
     <div class="column">
-
-        <h2>Estimated storage in GB</h2>
+        <h3>Estimated storage in GB</h3>
         <table>
             <thead>
             <tr>
@@ -125,16 +124,33 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
             {% for usage, storage in total_s3_storage.items()|sort(attribute='1', reverse=True) %}
                 <tr>
                     <td>{{ usage }}</td>
-                    <td>{{ (storage / days) |int }}</td>
+                    <td>{{ (storage / (days / 30)) |int }}</td>
                 </tr>
             {% endfor %}
             </tbody>
             <tfoot>
             <tr>
                 <td>Total</td>
-                <td>{{ ((total_s3_storage|sum_values|int) / days)|int }}</td>
+                <td>{{ ((total_s3_storage|sum_values|int) / (days / 30))|int }}</td>
             </tr>
             </tfoot>
+        </table>
+
+        <h3>Bucket Details Link (demo)</h3>
+        <table>
+            <thead>
+            <tr>
+                <th>Bucket</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td><a href="http://logserv.gi.ucsc.edu/cgi-bin/vg-k8s.cgi">vg-k8s</a></td>
+            </tr>
+            <tr>
+                <td><a href="http://logserv.gi.ucsc.edu/cgi-bin/vg-data.cgi">vg-data</a></td>
+            </tr>
+            </tbody>
         </table>
     </div>
 </div>
