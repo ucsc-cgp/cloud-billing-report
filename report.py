@@ -256,12 +256,15 @@ class AWSReport(Report):
 
         # Populate the dictionaries used for the daily global report
         for row in report_csv:
+
+            # skip rows that involve us getting money back.
+            if row['lineItem/LineItemType'].lower() in ['credit', 'refund']:
+                continue
+
             account = self.accounts.get(row['lineItem/UsageAccountId'], '(unknown)')  # account for resource
             service = row['product/ProductName']  # which type of product this is
             amount = Decimal(row['lineItem/BlendedCost'])  # the cost associated with this
             when = row['lineItem/UsageStartDate'][0:10]  # ISO8601
-            owner = row['resourceTags/user:Owner'] or row['resourceTags/user:owner'] or self.UNTAGGED  # owner of the resource, untagged if none specified
-            name = row['resourceTags/user:Name'] or self.UNTAGGED  # name of the resource, untagged if none specified
             resource_id = row['lineItem/ResourceId']  # resource id, not necessarily the arn
             region = row['product/region'] # The region the product was billed from
             usage_type = row['lineItem/UsageType']
