@@ -119,49 +119,49 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
         {% endif %}
     {% endfor %}
 </div>
-{#    <div class="column">#}
-{#        <h3>Estimated storage in GB</h3>#}
-{#        <table>#}
-{#            <thead>#}
-{#            <tr>#}
-{#                <th>Type</th>#}
-{#                <th>GB Estimate</th>#}
-{#            </tr>#}
-{#            </thead>#}
-{#            <tbody>#}
-{#            {% for usage, storage in total_s3_storage.items()|sort(attribute='1', reverse=True) %}#}
-{#                <tr>#}
-{#                    <td>{{ usage }}</td>#}
-{#                    <td>{{ (storage / (days / 30)) |int }}</td>#}
-{#                </tr>#}
-{#            {% endfor %}#}
-{#            </tbody>#}
-{#            <tfoot>#}
-{#            <tr>#}
-{#                <td>Total</td>#}
-{#                <td>{{ ((total_s3_storage|sum_values|int) / (days / 30))|int }}</td>#}
-{#            </tr>#}
-{#            </tfoot>#}
-{#        </table>#}
-{##}
-{#        <h3>Bucket Details Link (demo)</h3>#}
-{#        <table>#}
-{#            <thead>#}
-{#            <tr>#}
-{#                <th>Bucket</th>#}
-{#            </tr>#}
-{#            </thead>#}
-{#            <tbody>#}
-{#            <tr>#}
-{#                <td><a href="http://logserv.gi.ucsc.edu/cgi-bin/vg-k8s.cgi">vg-k8s</a></td>#}
-{#            </tr>#}
-{#            <tr>#}
-{#                <td><a href="http://logserv.gi.ucsc.edu/cgi-bin/vg-data.cgi">vg-data</a></td>#}
-{#            </tr>#}
-{#            </tbody>#}
-{#        </table>#}
-{#    </div>#}
-{#</div>#}
+    <div class="column">
+        <h3>Estimated storage in GB</h3>
+        <table>
+            <thead>
+            <tr>
+                <th>Type</th>
+                <th>Usage Cost</th>
+                <th>Usage Amount</th>
+                <th>Usage Unit</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for usageType, metrics in s3StorageSummaryMonthly.items()|sort(attribute='1.usageCost', reverse=True) %}
+                {% if metrics["usageCost"] > 1 %}
+                    <tr>
+                        <td>{{ usageType }}</td>
+                        <td>{{ metrics["usageCost"]|print_amount }}</td>
+                        <td>{{ metrics["usageAmount"]|int }}</td>
+                        <td>{{ metrics["usageUnit"] }}</td>
+                    </tr>
+                {% endif %}
+            {% endfor %}
+            </tbody>
+        </table>
+
+        <h3>Bucket Details Link (demo)</h3>
+        <table>
+            <thead>
+            <tr>
+                <th>Bucket</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td><a href="http://logserv.gi.ucsc.edu/cgi-bin/vg-k8s.cgi">vg-k8s</a></td>
+            </tr>
+            <tr>
+                <td><a href="http://logserv.gi.ucsc.edu/cgi-bin/vg-data.cgi">vg-data</a></td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
 
 <div>
     {% for account_id, services in accountServicesMonthly.items()|sort %}

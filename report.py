@@ -402,6 +402,66 @@ class AWSReport(Report):
 
         return topResources
 
+    def generateS3StorageSummary(self, startDate: datetime.date, endDate: datetime.date):
+        startDate = startDate.strftime("%Y-%m-%d")
+        endDate = endDate.strftime("%Y-%m-%d")
+
+        billingClient = boto3.client('ce',
+                                     aws_access_key_id=self.access_key,
+                                     aws_secret_access_key=self.secret_key)
+
+        # Make the request
+        result = billingClient.get_cost_and_usage(
+            TimePeriod = {
+                'Start': startDate,
+                'End': endDate
+            },
+            Granularity = "MONTHLY",
+            Filter = {
+                "And": [
+                    {
+                        "Not": {
+                            "Dimensions": {
+                                "Key": "RECORD_TYPE",
+                                "Values": ["Credit", "Refund"]
+                            }
+                        }
+                    }, {
+                        "Dimensions": {
+                            "Key": "SERVICE",
+                            "Values": ["Amazon Simple Storage Service"]
+                        }
+                    }]
+            },
+            Metrics = ["UsageQuantity", "BlendedCost"],
+            GroupBy = [
+                {
+                    'Type': 'DIMENSION',
+                    'Key': "USAGE_TYPE"
+                }
+            ]
+        )
+
+        # The dictionary we are returning
+        returnDict = {}
+
+        assert len(result["ResultsByTime"]) == 1
+        timeRange = result["ResultsByTime"][-1]
+
+        for group in timeRange["Groups"]:
+            # Parse out values
+            usageType = group["Keys"][0]
+            usageUnit = group["Metrics"]["UsageQuantity"]["Unit"]
+            usageAmount = float(group["Metrics"]["UsageQuantity"]["Amount"])
+            usageCost = float(group["Metrics"]["BlendedCost"]["Amount"])
+
+            # We only care about how GBs are flowing in/out and stored in S3 buckets
+            if "GB" in usageUnit:
+                assert usageType not in returnDict
+                returnDict[usageType] = {"usageCost": usageCost, "usageAmount": usageAmount, "usageUnit": usageUnit}
+
+        return returnDict
+
     def generateBetterReport(self) -> str:
         accountIds = list(self.accounts.keys())
 
@@ -415,6 +475,7 @@ class AWSReport(Report):
         accountSummaryMonthly   = self.generateAccountSummary(accountIds, firstDayOfMonth, lastDayOfMonth)
         accountSummaryDaily     = self.generateAccountSummary(accountIds, yesterday, yesterday + datetime.timedelta(1))
         usageTypeSummaryMonthly = self.generateUsageTypeSummary(accountIds, firstDayOfMonth, lastDayOfMonth)
+        s3StorageSummaryMonthly = self.generateS3StorageSummary(firstDayOfMonth, lastDayOfMonth)
 
         # Generate a summary on individual resources. This requires downloading thing billing CSV
         resourceSummaryMonthly  = self.generateResourceSummary()
@@ -437,7 +498,8 @@ class AWSReport(Report):
             serviceUsageTypesMonthly=usageTypeSummaryMonthly,
             accountServicesMonthly=accountSummaryMonthly,
             accountServicesDaily=accountSummaryDaily,
-            resourceSummaryMonthly=resourceSummaryMonthly
+            resourceSummaryMonthly=resourceSummaryMonthly,
+            s3StorageSummaryMonthly=s3StorageSummaryMonthly
         )
 
 class GCPReport(Report):
