@@ -16,23 +16,24 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
             </tr>
             </thead>
             <tbody>
-            {% for account_id, services in service_by_account.items()|sort %}
+            {% for account_id, billedAmount in accountTotalsMonthly.items()|sort %}
                 <tr>
                     <td><a href='#{{ account_id }}'>{{ account_id }}</a></td>
-                    <td>{{ service_by_account[account_id]|sum_values|print_amount }}</td>
-                    <td>{{ service_by_account_today[account_id]|sum_values|print_diff }}</td>
+                    <td>{{ billedAmount|print_amount }}</td>
+                    <td>{{ accountTotalsDaily[account_id]|print_amount }}</td>
                 </tr>
             {% endfor %}
             </tbody>
             <tfoot>
             <tr>
                 <td>Grand total</td>
-                <td>{{ service_by_account|nested_sum_values|print_amount }}</td>
-                <td>{{ service_by_account_today|nested_sum_values|print_amount }}</td>
+                <td>{{ accountTotalsMonthly|sum_values|print_amount }}</td>
+                <td>{{ accountTotalsDaily|sum_values|print_amount }}</td>
             </tr>
             </tfoot>
         </table>
     </div>
+
     <div class="column">
         {# Prints the total amount spent by each service #}
         <h2>Totals by service</h2>
@@ -44,11 +45,13 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
             </tr>
             </thead>
             <tbody>
-            {% for service, cost in total_service_cost.items()|sort(attribute='1', reverse=True) %}
+            {% for service, cost in serviceTotalsMonthly.items()|sort(attribute='1', reverse=True) %}
+                {% if cost > 1 %}
                 <tr>
                     <td>{{ service }}</td>
                     <td>{{ cost|print_amount }}</td>
                 </tr>
+                {% endif %}
             {% endfor %}
             </tbody>
         </table>
@@ -69,7 +72,7 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
     </tr>
     </thead>
     <tbody>
-    {% for id, resource in top_resources.items()|sort(attribute='1.monthly_cost', reverse=True) %}
+    {% for id, resource in resourceSummaryMonthly.items()|sort(attribute='1.monthly_cost', reverse=True) %}
         <tr>
             <td><a href="{{ resource.url }}">{{ resource.resource_arn }}</a></td>
             <td>{{ resource.account_name }}</td>
@@ -84,104 +87,87 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
 {# Prints the usage costs for various AWS services #}
 <h2>Monthly summary by service usage types</h2>
 <div class="row">
-    {% for service, usage_dict in summary_by_service.items()|sort %}
-        <div class="column">
-            <h3>{{ service }}</h3>
-            <table>
-                <thead>
-                <tr>
-                    <th>Usage Type</th>
-                    <th>Cost</th>
-                </tr>
-                </thead>
-                <tbody>
-                {% for usage_type, cost in usage_dict.items()|sort(attribute='1', reverse=True) %}
-                    <tr>
-                        <td>{{ usage_type }}</td>
-                        <td>{{ cost|print_amount }}</td>
-                    </tr>
-                    </tbody>
-                {% endfor %}
-                <tfoot>
-                <tr>
-                    <td>Grand total</td>
-                    <td>{{ usage_dict|sum_values|print_amount }}</td>
-                </tr>
-                </tfoot>
-            </table>
-        </div>
-    {% endfor %}
-    <div class="column">
-        <h3>Estimated storage in GB</h3>
-        <table>
-            <thead>
-            <tr>
-                <th>Type</th>
-                <th>GB Estimate</th>
-            </tr>
-            </thead>
-            <tbody>
-            {% for usage, storage in total_s3_storage.items()|sort(attribute='1', reverse=True) %}
-                <tr>
-                    <td>{{ usage }}</td>
-                    <td>{{ (storage / (days / 30)) |int }}</td>
-                </tr>
-            {% endfor %}
-            </tbody>
-            <tfoot>
-            <tr>
-                <td>Total</td>
-                <td>{{ ((total_s3_storage|sum_values|int) / (days / 30))|int }}</td>
-            </tr>
-            </tfoot>
-        </table>
-
-        <h3>Bucket Details Link (demo)</h3>
-        <table>
-            <thead>
-            <tr>
-                <th>Bucket</th>
-            </tr>
-            </thead>
-            <tbody>
-            <tr>
-                <td><a href="http://logserv.gi.ucsc.edu/cgi-bin/vg-k8s.cgi">vg-k8s</a></td>
-            </tr>
-            <tr>
-                <td><a href="http://logserv.gi.ucsc.edu/cgi-bin/vg-data.cgi">vg-data</a></td>
-            </tr>
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<div>
-    {% for account_id, services in service_by_account.items()|sort %}
-        <div class="accountRow">
-            <a name='{{ account_id }}' id='{{ account_id }}'></a>
-            <h2>Report for account {{ account_id }}</h2>
-
-            {%  if account_id in noncompliant_resource_by_account %}
+    {% for service, usage_dict in serviceUsageTypesMonthly.items()|sort %}
+        {% if service in ["Amazon Elastic Compute Cloud - Compute", "EC2 - Other", "Amazon Simple Storage Service"] %}
+            <div class="column">
+                <h3>{{ service }}</h3>
                 <table>
-                    <caption>Non-compliant Resource Breakdown (Compliance requires the resources to have an email address under the Owner tag.)</caption>
                     <thead>
                     <tr>
-                        <th>Resource ID</th>
-                        <th>Product Type</th>
-                        <th>Region</th>
+                        <th>Usage Type</th>
+                        <th>Cost</th>
                     </tr>
                     </thead>
                     <tbody>
-                    {% for resource in noncompliant_resource_by_account[account_id] %}
-                        <tr>
-                            <td>{{ resource.resource_arn }}</td>
-                            <td>{{ resource.resource_type }}</td>
-                            <td>{{ resource.region }}</td>
-                        </tr>
+                    {% for usage_type, cost in usage_dict.items()|sort(attribute='1', reverse=True) %}
+                        {% if cost > 1 %}
+                            <tr>
+                                <td>{{ usage_type }}</td>
+                                <td>{{ cost|print_amount }}</td>
+                            </tr>
+                        {% endif %}
                     {% endfor %}
                     </tbody>
+                    <tfoot>
+                    <tr>
+                        <td>Grand total</td>
+                        <td>{{ usage_dict|sum_values|print_amount }}</td>
+                    </tr>
+                    </tfoot>
                 </table>
-            {% endif %}
+            </div>
+        {% endif %}
+    {% endfor %}
+</div>
+{#    <div class="column">#}
+{#        <h3>Estimated storage in GB</h3>#}
+{#        <table>#}
+{#            <thead>#}
+{#            <tr>#}
+{#                <th>Type</th>#}
+{#                <th>GB Estimate</th>#}
+{#            </tr>#}
+{#            </thead>#}
+{#            <tbody>#}
+{#            {% for usage, storage in total_s3_storage.items()|sort(attribute='1', reverse=True) %}#}
+{#                <tr>#}
+{#                    <td>{{ usage }}</td>#}
+{#                    <td>{{ (storage / (days / 30)) |int }}</td>#}
+{#                </tr>#}
+{#            {% endfor %}#}
+{#            </tbody>#}
+{#            <tfoot>#}
+{#            <tr>#}
+{#                <td>Total</td>#}
+{#                <td>{{ ((total_s3_storage|sum_values|int) / (days / 30))|int }}</td>#}
+{#            </tr>#}
+{#            </tfoot>#}
+{#        </table>#}
+{##}
+{#        <h3>Bucket Details Link (demo)</h3>#}
+{#        <table>#}
+{#            <thead>#}
+{#            <tr>#}
+{#                <th>Bucket</th>#}
+{#            </tr>#}
+{#            </thead>#}
+{#            <tbody>#}
+{#            <tr>#}
+{#                <td><a href="http://logserv.gi.ucsc.edu/cgi-bin/vg-k8s.cgi">vg-k8s</a></td>#}
+{#            </tr>#}
+{#            <tr>#}
+{#                <td><a href="http://logserv.gi.ucsc.edu/cgi-bin/vg-data.cgi">vg-data</a></td>#}
+{#            </tr>#}
+{#            </tbody>#}
+{#        </table>#}
+{#    </div>#}
+{#</div>#}
+
+<div>
+    {% for account_id, services in accountServicesMonthly.items()|sort %}
+        <div class="accountRow">
+            <a name='{{ account_id }}' id='{{ account_id }}'></a>
+            <h2>Report for account {{ account_id }}</h2>
 
             <table>
                 <caption>Service Summary</caption>
@@ -197,15 +183,15 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
                     <tr>
                         <td>{{ service }}</td>
                         <td>{{ amount|print_amount }}</td>
-                        <td>{{ service_by_account_today[account_id][service]|print_diff }}</td>
+                        <td>{{ (accountServicesDaily[account_id][service] if service in accountServicesDaily[account_id] else 0)|print_diff }}</td>
                     </tr>
                 {% endfor %}
                 </tbody>
                 <tfoot>
                 <tr>
                     <td>Grand total</td>
-                    <td>{{ service_by_account[account_id]|sum_values|print_amount }}</td>
-                    <td>{{ service_by_account_today[account_id]|sum_values|print_diff }}</td>
+                    <td>{{ accountTotalsMonthly[account_id]|print_amount }}</td>
+                    <td>{{ accountTotalsDaily[account_id]|print_diff }}</td>
                 </tr>
                 </tfoot>
             </table>

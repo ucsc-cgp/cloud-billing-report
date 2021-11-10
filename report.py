@@ -121,6 +121,7 @@ class Report:
         return self._config['bigquery_table']
 
     def render_email(self,
+                     report_date: datetime.date,
                      recipients: Union[str, Sequence[str]],
                      **template_vars) -> str:
         msg = EmailMessage()
@@ -130,11 +131,14 @@ class Report:
         msg['From'] = self.email_from
         msg['To'] = recipients
         tmpl = self.jinja_env.get_template(f'{self.platform}_report.html')
-        body = tmpl.render(report_date=self.date, **template_vars)
+        body = tmpl.render(report_date=report_date, **template_vars)
         msg.set_content(body, subtype='html')
         return msg.as_string()
 
-    def render_personalized_email(self, recipient: str, resources: list):
+    def render_personalized_email(self,
+                                  report_date: datetime.date,
+                                  recipient: str,
+                                  resources: list):
         msg = EmailMessage()
         subject_date = self.date.strftime('%B %d, %Y')
         subject = f'{self.platform.upper()} Report for {subject_date}'
@@ -142,7 +146,7 @@ class Report:
         msg['From'] = self.email_from
         msg['To'] = recipient
         template = self.jinja_env.get_template('personalized_report.html')
-        body = template.render(report_date=self.date, resource_list=resources)
+        body = template.render(report_date=report_date, resource_list=resources)
         msg.set_content(body, subtype='html')
         return msg.as_string()
 
@@ -201,7 +205,7 @@ class AWSReport(Report):
 
         return compliance_list
 
-    def generate_personalized_compliance_reports(self, compliant_resources: list, report_dir="/tmp/personalizedEmails/") -> str:
+    def generatePersonalizedComplianceReports(self, reportDate: datetime.date, compliant_resources: list, report_dir="/tmp/personalizedEmails/") -> str:
         # TODO Most billing reports are showing $0.00 for the S3 costs... may need to rethink
         # Create a dictionary, where the key is the email address and the value is the list of resources
         account_resource_dict = {}
@@ -218,11 +222,21 @@ class AWSReport(Report):
         Path(report_dir).mkdir(parents=True, exist_ok=True)
         for email in account_resource_dict:
             eml_text = self.render_personalized_email(
+                reportDate,
                 email,
                 account_resource_dict[email]
             )
             with open(f"{report_dir}{email[0:email.find('@')]}-{uuid.uuid4().hex}.eml", "w") as eml_file:
                 eml_file.write(eml_text)
+
+    def generateComplianceSummary(self, reportDate: datetime.date):
+        # Create a list of resource objects based on their compliance status
+        compliance_list = self.generate_compliance_list()
+        compliant_resources = [r for r in compliance_list if r.get_compliance_status() == "COMPLIANT"]
+
+        # *** Currently set to run everyday ***
+        # For Monday only reports: 'if datetime.strptime(today, "%Y-%m-%d").today().weekday() == 0'
+        self.generatePersonalizedComplianceReports(reportDate, compliant_resources)
 
     def generateAccountSummary(self, accounts, startDate: datetime.date, endDate: datetime.date):
 
@@ -278,7 +292,7 @@ class AWSReport(Report):
             # Parse out values
             accountId = group["Keys"][0]
             serviceName = group["Keys"][1]
-            blendedCost = group["Metrics"]["BlendedCost"]["Amount"]
+            blendedCost = float(group["Metrics"]["BlendedCost"]["Amount"])
 
             # Populate the account in the dictionary if it isn't already there, do the same for the service
             returnDict.setdefault(accountId, {})
@@ -343,7 +357,7 @@ class AWSReport(Report):
             # Parse out values
             serviceName = group["Keys"][0]
             UsageType = group["Keys"][1]
-            blendedCost = group["Metrics"]["BlendedCost"]["Amount"]
+            blendedCost = float(group["Metrics"]["BlendedCost"]["Amount"])
 
             # Populate the account in the dictionary if it isn't already there, do the same for the service
             returnDict.setdefault(serviceName, {})
@@ -354,27 +368,77 @@ class AWSReport(Report):
 
         return returnDict
 
+    def generateResourceSummary(self):
+        reportCsvLines = self.usage_csv()
+        reportCsv = csv.DictReader(reportCsvLines)
+
+        resources = {}
+
+        for row in reportCsv:
+
+            # skip rows that involve us getting money back.
+            if row['lineItem/LineItemType'].lower() in ['credit', 'refund']:
+                continue
+
+            account = self.accounts.get(row['lineItem/UsageAccountId'], '(unknown)')  # account for resource
+            service = row['product/ProductName']  # which type of product this is
+            amount = Decimal(row['lineItem/BlendedCost'])  # the cost associated with this
+            resourceId = row['lineItem/ResourceId']  # resource id, not necessarily the arn
+            region = row['product/region'] # The region the product was billed from
+
+            # monthly cost summary of the resource
+            if len(resourceId) > 0:
+                resources.setdefault(resourceId, report_resource(resourceId, service, '', account, region))
+                resources[resourceId].set_resource_url()
+
+                if row['resourceTags/user:Owner']:
+                    resources[resourceId].add_tag_value("Owner", row['resourceTags/user:Owner'])
+                elif row['resourceTags/user:owner']:
+                    resources[resourceId].add_tag_value("owner", row['resourceTags/user:owner'])
+                resources[resourceId].add_to_monthly_cost(amount)
+
+        # Get the top 30 most expensive resources
+        topResources = dict(sorted(resources.items(), key=lambda x: x[1].monthly_cost, reverse=True)[:30])
+
+        return topResources
+
     def generateBetterReport(self) -> str:
         accountIds = list(self.accounts.keys())
 
-        # Get date variables
-        today = datetime.date.today()
-        firstDayOfMonth = today.replace(day=1)
-        lastDayOfMonth = datetime.date(today.year + (today.month == 12), (today.month + 1 if today.month < 12 else 1), 1) - datetime.timedelta(1)
+        # Get date variables. We will be making the report for the previous day.
+        yesterday = datetime.date.today() - datetime.timedelta(1)
+        firstDayOfMonth = yesterday.replace(day=1)
+        lastDayOfMonth = datetime.date(yesterday.year + (yesterday.month == 12), (yesterday.month + 1 if yesterday.month < 12 else 1), 1) - datetime.timedelta(1)
 
         # Get a monthly and daily aggregation of costs. These reports are a nested dictionary in the form:
         # dictionary {account1: {service1: cost1, service2: cost2, ...}, account2: ...}
         accountSummaryMonthly   = self.generateAccountSummary(accountIds, firstDayOfMonth, lastDayOfMonth)
-        accountSummaryDaily     = self.generateAccountSummary(accountIds, today, today + datetime.timedelta(1))
+        accountSummaryDaily     = self.generateAccountSummary(accountIds, yesterday, yesterday + datetime.timedelta(1))
         usageTypeSummaryMonthly = self.generateUsageTypeSummary(accountIds, firstDayOfMonth, lastDayOfMonth)
 
-        # Create some simple aggregations
-        totalsByAccountMonthly = {k: sum([float(v) for v in accountSummaryMonthly[k].values()]) for k in accountSummaryMonthly}
-        totalsByAccountDaily   = {k: sum([float(v) for v in accountSummaryDaily[k].values()]) for k in accountSummaryDaily}
-        totalsByServiceMonthly = {k: sum([float(v) for v in usageTypeSummaryMonthly[k].values()]) for k in usageTypeSummaryMonthly}
+        # Generate a summary on individual resources. This requires downloading thing billing CSV
+        resourceSummaryMonthly  = self.generateResourceSummary()
 
+        # This will generate personalized compliance emails for everyone with a tagged resource
+        self.generateComplianceSummary(yesterday)
 
-        return ""
+        # Create some simple aggregations, convert the strings sent over by AWS to floats
+        totalsByAccountMonthly = {k: sum(accountSummaryMonthly[k].values()) for k in accountSummaryMonthly}
+        totalsByAccountDaily   = {k: sum(accountSummaryDaily[k].values()) for k in accountSummaryDaily}
+        totalsByServiceMonthly = {k: sum(usageTypeSummaryMonthly[k].values()) for k in usageTypeSummaryMonthly}
+
+        # Render the email using Jinja
+        return self.render_email(
+            yesterday,
+            self.email_recipients,
+            accountTotalsMonthly=totalsByAccountMonthly,
+            accountTotalsDaily=totalsByAccountDaily,
+            serviceTotalsMonthly=totalsByServiceMonthly,
+            serviceUsageTypesMonthly=usageTypeSummaryMonthly,
+            accountServicesMonthly=accountSummaryMonthly,
+            accountServicesDaily=accountSummaryDaily,
+            resourceSummaryMonthly=resourceSummaryMonthly
+        )
 
 
     def generate_report(self) -> str:
@@ -508,7 +572,7 @@ class GCPReport(Report):
             ORDER BY LOWER(project.name) ASC, service.description ASC'''
         query_job = client.query(query)
         rows = list(query_job.result())
-        return self.render_email(self.email_recipients, rows=rows)
+        return self.render_email(query_today, self.email_recipients, rows=rows)
 
 
 def print_amount(amount: Union[Decimal, float, int]) -> str:
