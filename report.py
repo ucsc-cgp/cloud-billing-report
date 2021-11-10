@@ -511,7 +511,7 @@ class GCPReport(Report):
     def __init__(self, config_path: str, date: datetime.date):
         super().__init__(platform='gcp', config_path=config_path, date=date)
 
-    def generate_report(self) -> str:
+    def generateBetterReport(self) -> str:
         client = bigquery.Client()
         query_month = self.date.strftime('%Y%m')
         query_today = self.date.strftime('%Y-%m-%d')
