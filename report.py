@@ -481,7 +481,7 @@ class AWSReport(Report):
         usageTypeSummaryMonthly = self.generateUsageTypeSummary(self.accounts, firstDayOfMonth, lastDayOfMonth)
         s3StorageSummaryMonthly = self.generateS3StorageSummary(firstDayOfMonth, lastDayOfMonth)
 
-        # Generate a summary on individual resources. This requires downloading thing billing CSV
+        # Generate a summary on individual resources. This requires downloading the billing CSV
         resourceSummaryMonthly  = self.generateResourceSummary()
 
         # This will generate personalized compliance emails for everyone with a tagged resource
