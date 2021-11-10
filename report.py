@@ -4,10 +4,7 @@ Summarizes given billing data for a cloud platform as a .eml printed to stdout.
 import argparse
 import collections
 import csv
-from datetime import (
-    datetime,
-    timedelta,
-)
+import datetime
 from decimal import (
     Decimal,
 )
@@ -226,6 +223,159 @@ class AWSReport(Report):
             )
             with open(f"{report_dir}{email[0:email.find('@')]}-{uuid.uuid4().hex}.eml", "w") as eml_file:
                 eml_file.write(eml_text)
+
+    def generateAccountSummary(self, accounts, startDate: datetime.date, endDate: datetime.date):
+
+        startDate = startDate.strftime("%Y-%m-%d")
+        endDate = endDate.strftime("%Y-%m-%d")
+
+        billingClient = boto3.client('ce',
+                                     aws_access_key_id=self.access_key,
+                                     aws_secret_access_key=self.secret_key)
+
+        # Make the request
+        result = billingClient.get_cost_and_usage(
+            TimePeriod = {
+                'Start': startDate,
+                'End': endDate
+            },
+            Granularity = "MONTHLY",
+            Filter = {
+                "And": [
+                    {
+                        "Not": {
+                            "Dimensions": {
+                                "Key": "RECORD_TYPE",
+                                "Values": ["Credit", "Refund"]
+                            }
+                        }
+                    }, {
+                        "Dimensions": {
+                            "Key": "LINKED_ACCOUNT",
+                            "Values": accounts
+                        }
+                    }]
+            },
+            Metrics = ["BlendedCost"],
+            GroupBy = [
+                {
+                    'Type': 'DIMENSION',
+                    'Key': "LINKED_ACCOUNT"
+                }, {
+                    'Type': 'DIMENSION',
+                    'Key': "SERVICE"
+                }
+            ]
+        )
+
+        # The dictionary we are returning
+        returnDict = {}
+
+        assert len(result["ResultsByTime"]) == 1
+        timeRange = result["ResultsByTime"][0]
+
+        for group in timeRange["Groups"]:
+            # Parse out values
+            accountId = group["Keys"][0]
+            serviceName = group["Keys"][1]
+            blendedCost = group["Metrics"]["BlendedCost"]["Amount"]
+
+            # Populate the account in the dictionary if it isn't already there, do the same for the service
+            returnDict.setdefault(accountId, {})
+
+            # The service should only appear once per account
+            assert serviceName not in returnDict[accountId]
+            returnDict[accountId][serviceName] = blendedCost
+
+        return returnDict
+
+    def generateUsageTypeSummary(self, accounts, startDate: datetime.date, endDate: datetime.date):
+
+        startDate = startDate.strftime("%Y-%m-%d")
+        endDate = endDate.strftime("%Y-%m-%d")
+
+        billingClient = boto3.client('ce',
+                                     aws_access_key_id=self.access_key,
+                                     aws_secret_access_key=self.secret_key)
+
+        # Make the request
+        result = billingClient.get_cost_and_usage(
+            TimePeriod = {
+                'Start': startDate,
+                'End': endDate
+            },
+            Granularity = "MONTHLY",
+            Filter = {
+                "And": [
+                    {
+                        "Not": {
+                            "Dimensions": {
+                                "Key": "RECORD_TYPE",
+                                "Values": ["Credit", "Refund"]
+                            }
+                        }
+                    }, {
+                        "Dimensions": {
+                            "Key": "LINKED_ACCOUNT",
+                            "Values": accounts
+                        }
+                    }]
+            },
+            Metrics = ["BlendedCost"],
+            GroupBy = [
+                {
+                    'Type': 'DIMENSION',
+                    'Key': "SERVICE"
+                }, {
+                    'Type': 'DIMENSION',
+                    'Key': "USAGE_TYPE"
+                }
+            ]
+        )
+
+        # The dictionary we are returning
+        returnDict = {}
+
+        assert len(result["ResultsByTime"]) == 1
+        timeRange = result["ResultsByTime"][0]
+
+        for group in timeRange["Groups"]:
+            # Parse out values
+            serviceName = group["Keys"][0]
+            UsageType = group["Keys"][1]
+            blendedCost = group["Metrics"]["BlendedCost"]["Amount"]
+
+            # Populate the account in the dictionary if it isn't already there, do the same for the service
+            returnDict.setdefault(serviceName, {})
+
+            # The service should only appear once per account
+            assert UsageType not in returnDict[serviceName]
+            returnDict[serviceName][UsageType] = blendedCost
+
+        return returnDict
+
+    def generateBetterReport(self) -> str:
+        accountIds = list(self.accounts.keys())
+
+        # Get date variables
+        today = datetime.date.today()
+        firstDayOfMonth = today.replace(day=1)
+        lastDayOfMonth = datetime.date(today.year + (today.month == 12), (today.month + 1 if today.month < 12 else 1), 1) - datetime.timedelta(1)
+
+        # Get a monthly and daily aggregation of costs. These reports are a nested dictionary in the form:
+        # dictionary {account1: {service1: cost1, service2: cost2, ...}, account2: ...}
+        accountSummaryMonthly   = self.generateAccountSummary(accountIds, firstDayOfMonth, lastDayOfMonth)
+        accountSummaryDaily     = self.generateAccountSummary(accountIds, today, today + datetime.timedelta(1))
+        usageTypeSummaryMonthly = self.generateUsageTypeSummary(accountIds, firstDayOfMonth, lastDayOfMonth)
+
+        # Create some simple aggregations
+        totalsByAccountMonthly = {k: sum([float(v) for v in accountSummaryMonthly[k].values()]) for k in accountSummaryMonthly}
+        totalsByAccountDaily   = {k: sum([float(v) for v in accountSummaryDaily[k].values()]) for k in accountSummaryDaily}
+        totalsByServiceMonthly = {k: sum([float(v) for v in usageTypeSummaryMonthly[k].values()]) for k in usageTypeSummaryMonthly}
+
+
+        return ""
+
 
     def generate_report(self) -> str:
         report_csv_lines = self.usage_csv()
@@ -475,13 +625,13 @@ if __name__ == '__main__':
                         choices=report_types.keys(),
                         help='Platform to generate a report for.')
     parser.add_argument('report_date',
-                        default=(datetime.now() - timedelta(days=1)).strftime(date_format),
+                        default=(datetime.datetime.now() - datetime.timedelta(days=1)).strftime(date_format),
                         nargs='?',
                         help='YYYY-MM-DD to generate a report for. Defaults to yesterday.')
     parser.add_argument('--config',
                         default=Path.cwd() / 'config.json',
                         help='Path to config.json. Default to current directory.')
     arguments = parser.parse_args()
-    date = datetime.strptime(arguments.report_date, date_format).date()
+    date = datetime.datetime.strptime(arguments.report_date, date_format).date()
     report = report_types[arguments.report_type](arguments.config, date)
-    print(report.generate_report())
+    print(report.generateBetterReport())
