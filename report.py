@@ -531,7 +531,7 @@ class GCPReport(Report):
             ORDER BY LOWER(project.name) ASC, service.description ASC'''
         query_job = client.query(query)
         rows = list(query_job.result())
-        return self.render_email(query_today, self.email_recipients, rows=rows)
+        return self.render_email(self.date.today(), self.email_recipients, rows=rows)
 
 
 def print_amount(amount: Union[Decimal, float, int]) -> str:
