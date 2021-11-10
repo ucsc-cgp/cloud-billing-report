@@ -240,6 +240,8 @@ class AWSReport(Report):
 
     def generateAccountSummary(self, accounts, startDate: datetime.date, endDate: datetime.date):
 
+        accountIds = list(accounts.keys())
+
         startDate = startDate.strftime("%Y-%m-%d")
         endDate = endDate.strftime("%Y-%m-%d")
 
@@ -266,7 +268,7 @@ class AWSReport(Report):
                     }, {
                         "Dimensions": {
                             "Key": "LINKED_ACCOUNT",
-                            "Values": accounts
+                            "Values": accountIds
                         }
                     }]
             },
@@ -291,19 +293,22 @@ class AWSReport(Report):
         for group in timeRange["Groups"]:
             # Parse out values
             accountId = group["Keys"][0]
+            accountName = accounts[accountId]
             serviceName = group["Keys"][1]
             blendedCost = float(group["Metrics"]["BlendedCost"]["Amount"])
 
             # Populate the account in the dictionary if it isn't already there, do the same for the service
-            returnDict.setdefault(accountId, {})
+            returnDict.setdefault(accountName, {})
 
             # The service should only appear once per account
-            assert serviceName not in returnDict[accountId]
-            returnDict[accountId][serviceName] = blendedCost
+            assert serviceName not in returnDict[accountName]
+            returnDict[accountName][serviceName] = blendedCost
 
         return returnDict
 
     def generateUsageTypeSummary(self, accounts, startDate: datetime.date, endDate: datetime.date):
+
+        accountIds = list(accounts.keys())
 
         startDate = startDate.strftime("%Y-%m-%d")
         endDate = endDate.strftime("%Y-%m-%d")
@@ -331,7 +336,7 @@ class AWSReport(Report):
                     }, {
                         "Dimensions": {
                             "Key": "LINKED_ACCOUNT",
-                            "Values": accounts
+                            "Values": accountIds
                         }
                     }]
             },
@@ -463,8 +468,6 @@ class AWSReport(Report):
         return returnDict
 
     def generateBetterReport(self) -> str:
-        accountIds = list(self.accounts.keys())
-
         # Get date variables. We will be making the report for the previous day.
         yesterday = datetime.date.today() - datetime.timedelta(1)
         firstDayOfMonth = yesterday.replace(day=1)
@@ -472,9 +475,10 @@ class AWSReport(Report):
 
         # Get a monthly and daily aggregation of costs. These reports are a nested dictionary in the form:
         # dictionary {account1: {service1: cost1, service2: cost2, ...}, account2: ...}
-        accountSummaryMonthly   = self.generateAccountSummary(accountIds, firstDayOfMonth, lastDayOfMonth)
-        accountSummaryDaily     = self.generateAccountSummary(accountIds, yesterday, yesterday + datetime.timedelta(1))
-        usageTypeSummaryMonthly = self.generateUsageTypeSummary(accountIds, firstDayOfMonth, lastDayOfMonth)
+        accountSummaryMonthly   = self.generateAccountSummary(self.accounts, firstDayOfMonth, lastDayOfMonth)
+        accountSummaryDaily     = self.generateAccountSummary(self.accounts, yesterday, yesterday + datetime.timedelta(1))
+
+        usageTypeSummaryMonthly = self.generateUsageTypeSummary(self.accounts, firstDayOfMonth, lastDayOfMonth)
         s3StorageSummaryMonthly = self.generateS3StorageSummary(firstDayOfMonth, lastDayOfMonth)
 
         # Generate a summary on individual resources. This requires downloading thing billing CSV
