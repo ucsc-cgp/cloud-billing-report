@@ -520,13 +520,11 @@ class GCPReport(Report):
         query = f'''SELECT
               project.name,
               service.description,
-              SUM(cost) + SUM(IFNULL(creds.amount, 0)) AS cost_month,
-              SUM(CASE WHEN DATE(usage_start_time) = '{query_today}' THEN cost ELSE 0 END) +
-              SUM(CASE WHEN DATE(usage_start_time) = '{query_today}'
-                       THEN IFNULL(creds.amount, 0) ELSE 0 END) as cost_today
+              SUM(CASE WHEN DATE(usage_start_time) <= '{query_today}' THEN cost + IFNULL(creds.amount, 0) ELSE 0 END) AS cost_month,
+              SUM(CASE WHEN DATE(usage_start_time)  = '{query_today}' THEN cost + IFNULL(creds.amount, 0) ELSE 0 END) AS cost_today
             FROM `{self.bigquery_table}`
             LEFT JOIN UNNEST(credits) AS creds
-            WHERE invoice.month = '{query_month}' AND DATE(usage_start_time) <= '{query_today}'
+            WHERE invoice.month = '{query_month}'
             GROUP BY project.name, service.description
             ORDER BY LOWER(project.name) ASC, service.description ASC'''
         query_job = client.query(query)
