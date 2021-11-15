@@ -4,10 +4,7 @@ Summarizes given billing data for a cloud platform as a .eml printed to stdout.
 import argparse
 import collections
 import csv
-from datetime import (
-    datetime,
-    timedelta,
-)
+import datetime
 from decimal import (
     Decimal,
 )
@@ -124,6 +121,7 @@ class Report:
         return self._config['bigquery_table']
 
     def render_email(self,
+                     report_date: datetime.date,
                      recipients: Union[str, Sequence[str]],
                      **template_vars) -> str:
         msg = EmailMessage()
@@ -133,11 +131,14 @@ class Report:
         msg['From'] = self.email_from
         msg['To'] = recipients
         tmpl = self.jinja_env.get_template(f'{self.platform}_report.html')
-        body = tmpl.render(report_date=self.date, **template_vars)
+        body = tmpl.render(report_date=report_date, **template_vars)
         msg.set_content(body, subtype='html')
         return msg.as_string()
 
-    def render_personalized_email(self, recipient: str, resources: list):
+    def render_personalized_email(self,
+                                  report_date: datetime.date,
+                                  recipient: str,
+                                  resources: list):
         msg = EmailMessage()
         subject_date = self.date.strftime('%B %d, %Y')
         subject = f'{self.platform.upper()} Report for {subject_date}'
@@ -145,7 +146,7 @@ class Report:
         msg['From'] = self.email_from
         msg['To'] = recipient
         template = self.jinja_env.get_template('personalized_report.html')
-        body = template.render(report_date=self.date, resource_list=resources)
+        body = template.render(report_date=report_date, resource_list=resources)
         msg.set_content(body, subtype='html')
         return msg.as_string()
 
@@ -204,7 +205,7 @@ class AWSReport(Report):
 
         return compliance_list
 
-    def generate_personalized_compliance_reports(self, compliant_resources: list, report_dir="/tmp/personalizedEmails/") -> str:
+    def generatePersonalizedComplianceReports(self, reportDate: datetime.date, compliant_resources: list, report_dir="/tmp/personalizedEmails/") -> str:
         # TODO Most billing reports are showing $0.00 for the S3 costs... may need to rethink
         # Create a dictionary, where the key is the email address and the value is the list of resources
         account_resource_dict = {}
@@ -221,41 +222,164 @@ class AWSReport(Report):
         Path(report_dir).mkdir(parents=True, exist_ok=True)
         for email in account_resource_dict:
             eml_text = self.render_personalized_email(
+                reportDate,
                 email,
                 account_resource_dict[email]
             )
             with open(f"{report_dir}{email[0:email.find('@')]}-{uuid.uuid4().hex}.eml", "w") as eml_file:
                 eml_file.write(eml_text)
 
-    def generate_report(self) -> str:
-        report_csv_lines = self.usage_csv()
-        report_csv = csv.DictReader(report_csv_lines)
-        service_by_account = nested_dict()
-        service_by_account_today = nested_dict()
-        summary_by_service = nested_dict()
-        total_service_cost = collections.defaultdict(Decimal)
-        total_s3_storage = collections.defaultdict(float)
-        resource_by_id = {}
-
-        today = self.date.strftime('%Y-%m-%d')
-        days = datetime.now().day
-
+    def generateComplianceSummary(self, reportDate: datetime.date):
         # Create a list of resource objects based on their compliance status
         compliance_list = self.generate_compliance_list()
         compliant_resources = [r for r in compliance_list if r.get_compliance_status() == "COMPLIANT"]
-        noncompliant_resources = [r for r in compliance_list if r.get_compliance_status() == "NON_COMPLIANT"]
 
         # *** Currently set to run everyday ***
         # For Monday only reports: 'if datetime.strptime(today, "%Y-%m-%d").today().weekday() == 0'
-        self.generate_personalized_compliance_reports(compliant_resources)
+        self.generatePersonalizedComplianceReports(reportDate, compliant_resources)
 
-        # create list of noncompliant resources
-        noncompliant_resource_by_account = {self.compliance["accounts"][account_id]: [] for account_id in self.compliance["accounts"]}
-        for resource in noncompliant_resources:
-            noncompliant_resource_by_account[resource.get_account_name()].append(resource)
+    def generateAccountSummary(self, accounts, startDate: datetime.date, endDate: datetime.date):
 
-        # Populate the dictionaries used for the daily global report
-        for row in report_csv:
+        accountIds = list(accounts.keys())
+
+        startDate = startDate.strftime("%Y-%m-%d")
+        endDate = endDate.strftime("%Y-%m-%d")
+
+        billingClient = boto3.client('ce',
+                                     aws_access_key_id=self.access_key,
+                                     aws_secret_access_key=self.secret_key)
+
+        # Make the request
+        result = billingClient.get_cost_and_usage(
+            TimePeriod = {
+                'Start': startDate,
+                'End': endDate
+            },
+            Granularity = "MONTHLY",
+            Filter = {
+                "And": [
+                    {
+                        "Not": {
+                            "Dimensions": {
+                                "Key": "RECORD_TYPE",
+                                "Values": ["Credit", "Refund"]
+                            }
+                        }
+                    }, {
+                        "Dimensions": {
+                            "Key": "LINKED_ACCOUNT",
+                            "Values": accountIds
+                        }
+                    }]
+            },
+            Metrics = ["BlendedCost"],
+            GroupBy = [
+                {
+                    'Type': 'DIMENSION',
+                    'Key': "LINKED_ACCOUNT"
+                }, {
+                    'Type': 'DIMENSION',
+                    'Key': "SERVICE"
+                }
+            ]
+        )
+
+        # The dictionary we are returning
+        returnDict = {}
+
+        assert len(result["ResultsByTime"]) == 1
+        timeRange = result["ResultsByTime"][0]
+
+        for group in timeRange["Groups"]:
+            # Parse out values
+            accountId = group["Keys"][0]
+            accountName = accounts[accountId]
+            serviceName = group["Keys"][1]
+            blendedCost = float(group["Metrics"]["BlendedCost"]["Amount"])
+
+            # Populate the account in the dictionary if it isn't already there, do the same for the service
+            returnDict.setdefault(accountName, {})
+
+            # The service should only appear once per account
+            assert serviceName not in returnDict[accountName]
+            returnDict[accountName][serviceName] = blendedCost
+
+        return returnDict
+
+    def generateUsageTypeSummary(self, accounts, startDate: datetime.date, endDate: datetime.date):
+
+        accountIds = list(accounts.keys())
+
+        startDate = startDate.strftime("%Y-%m-%d")
+        endDate = endDate.strftime("%Y-%m-%d")
+
+        billingClient = boto3.client('ce',
+                                     aws_access_key_id=self.access_key,
+                                     aws_secret_access_key=self.secret_key)
+
+        # Make the request
+        result = billingClient.get_cost_and_usage(
+            TimePeriod = {
+                'Start': startDate,
+                'End': endDate
+            },
+            Granularity = "MONTHLY",
+            Filter = {
+                "And": [
+                    {
+                        "Not": {
+                            "Dimensions": {
+                                "Key": "RECORD_TYPE",
+                                "Values": ["Credit", "Refund"]
+                            }
+                        }
+                    }, {
+                        "Dimensions": {
+                            "Key": "LINKED_ACCOUNT",
+                            "Values": accountIds
+                        }
+                    }]
+            },
+            Metrics = ["BlendedCost"],
+            GroupBy = [
+                {
+                    'Type': 'DIMENSION',
+                    'Key': "SERVICE"
+                }, {
+                    'Type': 'DIMENSION',
+                    'Key': "USAGE_TYPE"
+                }
+            ]
+        )
+
+        # The dictionary we are returning
+        returnDict = {}
+
+        assert len(result["ResultsByTime"]) == 1
+        timeRange = result["ResultsByTime"][0]
+
+        for group in timeRange["Groups"]:
+            # Parse out values
+            serviceName = group["Keys"][0]
+            UsageType = group["Keys"][1]
+            blendedCost = float(group["Metrics"]["BlendedCost"]["Amount"])
+
+            # Populate the account in the dictionary if it isn't already there, do the same for the service
+            returnDict.setdefault(serviceName, {})
+
+            # The service should only appear once per account
+            assert UsageType not in returnDict[serviceName]
+            returnDict[serviceName][UsageType] = blendedCost
+
+        return returnDict
+
+    def generateResourceSummary(self):
+        reportCsvLines = self.usage_csv()
+        reportCsv = csv.DictReader(reportCsvLines)
+
+        resources = {}
+
+        for row in reportCsv:
 
             # skip rows that involve us getting money back.
             if row['lineItem/LineItemType'].lower() in ['credit', 'refund']:
@@ -264,81 +388,130 @@ class AWSReport(Report):
             account = self.accounts.get(row['lineItem/UsageAccountId'], '(unknown)')  # account for resource
             service = row['product/ProductName']  # which type of product this is
             amount = Decimal(row['lineItem/BlendedCost'])  # the cost associated with this
-            when = row['lineItem/UsageStartDate'][0:10]  # ISO8601
-            resource_id = row['lineItem/ResourceId']  # resource id, not necessarily the arn
+            resourceId = row['lineItem/ResourceId']  # resource id, not necessarily the arn
             region = row['product/region'] # The region the product was billed from
-            usage_type = row['lineItem/UsageType']
 
             # monthly cost summary of the resource
-            if len(resource_id) > 0:
-                if resource_id not in resource_by_id:
-                    resource_by_id[resource_id] = report_resource(resource_id, service, '', account, region)
-                    resource_by_id[resource_id].set_resource_url()
+            if len(resourceId) > 0:
+                resources.setdefault(resourceId, report_resource(resourceId, service, '', account, region))
+                resources[resourceId].set_resource_url()
 
                 if row['resourceTags/user:Owner']:
-                    resource_by_id[resource_id].add_tag_value("Owner", row['resourceTags/user:Owner'])
+                    resources[resourceId].add_tag_value("Owner", row['resourceTags/user:Owner'])
                 elif row['resourceTags/user:owner']:
-                    resource_by_id[resource_id].add_tag_value("owner", row['resourceTags/user:owner'])
-                resource_by_id[resource_id].add_to_monthly_cost(amount)
+                    resources[resourceId].add_tag_value("owner", row['resourceTags/user:owner'])
+                resources[resourceId].add_to_monthly_cost(amount)
 
-            if when == today:
-                service_by_account_today[account][service] += amount
-                service_by_account[account][service] += amount
-            service_by_account[account][service] += amount
+        # Get the top 30 most expensive resources
+        topResources = dict(sorted(resources.items(), key=lambda x: x[1].monthly_cost, reverse=True)[:30])
 
-            # Only look at the big spender services
-            if service in self.RESOURCE_SHORTHAND:
-                summary_by_service[service][usage_type] += amount
-            total_service_cost[service] += amount
+        return topResources
 
-            # The description contains the billing
-            description = row['lineItem/LineItemDescription']
+    def generateS3StorageSummary(self, startDate: datetime.date, endDate: datetime.date):
+        startDate = startDate.strftime("%Y-%m-%d")
+        endDate = endDate.strftime("%Y-%m-%d")
 
-            # This is pretty gross, but AWS doesn't have a single standardized 'you were charged for X GB' column,
-            # so we need to parse out the rows that are charges for timed storage, where we are charged per byte per hour
-            # and the billing unit is in the form of GB.
-            if service == "Amazon Simple Storage Service" and \
-                    "timedstorage" in usage_type.lower() and \
-                    'bytehrs' in usage_type.lower() and \
-                    'per GB' in description and \
-                    description[0] == '$':
+        billingClient = boto3.client('ce',
+                                     aws_access_key_id=self.access_key,
+                                     aws_secret_access_key=self.secret_key)
 
-                # remove any region prefix
-                usage_type_partition = usage_type.partition("TimedStorage")
-                new_usage_type = usage_type_partition[1] + usage_type_partition[2]
-
-                # dollars per GB per hour
-                dollars_per_GB = float(description[1:description.find(' ')])
-                GB_per_dollar = 1 / dollars_per_GB
-
-                # We are charged every 1 hour for each byte we have, at a rate of GB / dollar
-                total_s3_storage[new_usage_type] += float(amount) / float(row['lineItem/BlendedRate'])
-
-        top_resources = dict(sorted(resource_by_id.items(), key=lambda x: x[1].monthly_cost, reverse=True)[:30])
-        total_service_cost = dict(sorted(total_service_cost.items(), key=lambda x: x[1], reverse=True)[:min(len(total_service_cost.items()), 20)])
-        for service in summary_by_service:
-            summary_by_service[service] = dict(sorted([(k,v) for k,v in summary_by_service[service].items() if v > 1], key=lambda x: x[1], reverse=True))
-
-
-        return self.render_email(
-            self.email_recipients,
-            service_by_account=service_by_account,
-            service_by_account_today=service_by_account_today,
-            noncompliant_resource_by_account=noncompliant_resource_by_account,
-            top_resources=top_resources,
-            summary_by_service=summary_by_service,
-            total_service_cost=total_service_cost,
-            total_s3_storage=total_s3_storage,
-            days=days
+        # Make the request
+        result = billingClient.get_cost_and_usage(
+            TimePeriod = {
+                'Start': startDate,
+                'End': endDate
+            },
+            Granularity = "MONTHLY",
+            Filter = {
+                "And": [
+                    {
+                        "Not": {
+                            "Dimensions": {
+                                "Key": "RECORD_TYPE",
+                                "Values": ["Credit", "Refund"]
+                            }
+                        }
+                    }, {
+                        "Dimensions": {
+                            "Key": "SERVICE",
+                            "Values": ["Amazon Simple Storage Service"]
+                        }
+                    }]
+            },
+            Metrics = ["UsageQuantity", "BlendedCost"],
+            GroupBy = [
+                {
+                    'Type': 'DIMENSION',
+                    'Key': "USAGE_TYPE"
+                }
+            ]
         )
 
+        # The dictionary we are returning
+        returnDict = {}
+
+        assert len(result["ResultsByTime"]) == 1
+        timeRange = result["ResultsByTime"][-1]
+
+        for group in timeRange["Groups"]:
+            # Parse out values
+            usageType = group["Keys"][0]
+            usageUnit = group["Metrics"]["UsageQuantity"]["Unit"]
+            usageAmount = float(group["Metrics"]["UsageQuantity"]["Amount"])
+            usageCost = float(group["Metrics"]["BlendedCost"]["Amount"])
+
+            # We only care about how GBs are flowing in/out and stored in S3 buckets
+            if "GB" in usageUnit:
+                assert usageType not in returnDict
+                returnDict[usageType] = {"usageCost": usageCost, "usageAmount": usageAmount, "usageUnit": usageUnit}
+
+        return returnDict
+
+    def generateBetterReport(self) -> str:
+        # Get date variables. We will be making the report for the previous day.
+        yesterday = datetime.date.today() - datetime.timedelta(1)
+        firstDayOfMonth = yesterday.replace(day=1)
+        lastDayOfMonth = datetime.date(yesterday.year + (yesterday.month == 12), (yesterday.month + 1 if yesterday.month < 12 else 1), 1) - datetime.timedelta(1)
+
+        # Get a monthly and daily aggregation of costs. These reports are a nested dictionary in the form:
+        # dictionary {account1: {service1: cost1, service2: cost2, ...}, account2: ...}
+        accountSummaryMonthly   = self.generateAccountSummary(self.accounts, firstDayOfMonth, lastDayOfMonth)
+        accountSummaryDaily     = self.generateAccountSummary(self.accounts, yesterday, yesterday + datetime.timedelta(1))
+
+        usageTypeSummaryMonthly = self.generateUsageTypeSummary(self.accounts, firstDayOfMonth, lastDayOfMonth)
+        s3StorageSummaryMonthly = self.generateS3StorageSummary(firstDayOfMonth, lastDayOfMonth)
+
+        # Generate a summary on individual resources. This requires downloading the billing CSV
+        resourceSummaryMonthly  = self.generateResourceSummary()
+
+        # This will generate personalized compliance emails for everyone with a tagged resource
+        self.generateComplianceSummary(yesterday)
+
+        # Create some simple aggregations, convert the strings sent over by AWS to floats
+        totalsByAccountMonthly = {k: sum(accountSummaryMonthly[k].values()) for k in accountSummaryMonthly}
+        totalsByAccountDaily   = {k: sum(accountSummaryDaily[k].values()) for k in accountSummaryDaily}
+        totalsByServiceMonthly = {k: sum(usageTypeSummaryMonthly[k].values()) for k in usageTypeSummaryMonthly}
+
+        # Render the email using Jinja
+        return self.render_email(
+            yesterday,
+            self.email_recipients,
+            accountTotalsMonthly=totalsByAccountMonthly,
+            accountTotalsDaily=totalsByAccountDaily,
+            serviceTotalsMonthly=totalsByServiceMonthly,
+            serviceUsageTypesMonthly=usageTypeSummaryMonthly,
+            accountServicesMonthly=accountSummaryMonthly,
+            accountServicesDaily=accountSummaryDaily,
+            resourceSummaryMonthly=resourceSummaryMonthly,
+            s3StorageSummaryMonthly=s3StorageSummaryMonthly
+        )
 
 class GCPReport(Report):
 
     def __init__(self, config_path: str, date: datetime.date):
         super().__init__(platform='gcp', config_path=config_path, date=date)
 
-    def generate_report(self) -> str:
+    def generateBetterReport(self) -> str:
         client = bigquery.Client()
         query_month = self.date.strftime('%Y%m')
         query_today = self.date.strftime('%Y-%m-%d')
@@ -347,18 +520,16 @@ class GCPReport(Report):
         query = f'''SELECT
               project.name,
               service.description,
-              SUM(cost) + SUM(IFNULL(creds.amount, 0)) AS cost_month,
-              SUM(CASE WHEN DATE(usage_start_time) = '{query_today}' THEN cost ELSE 0 END) +
-              SUM(CASE WHEN DATE(usage_start_time) = '{query_today}'
-                       THEN IFNULL(creds.amount, 0) ELSE 0 END) as cost_today
+              SUM(CASE WHEN DATE(usage_start_time) <= '{query_today}' THEN cost + IFNULL(creds.amount, 0) ELSE 0 END) AS cost_month,
+              SUM(CASE WHEN DATE(usage_start_time)  = '{query_today}' THEN cost + IFNULL(creds.amount, 0) ELSE 0 END) AS cost_today
             FROM `{self.bigquery_table}`
             LEFT JOIN UNNEST(credits) AS creds
-            WHERE invoice.month = '{query_month}' AND DATE(usage_start_time) <= '{query_today}'
+            WHERE invoice.month = '{query_month}'
             GROUP BY project.name, service.description
             ORDER BY LOWER(project.name) ASC, service.description ASC'''
         query_job = client.query(query)
         rows = list(query_job.result())
-        return self.render_email(self.email_recipients, rows=rows)
+        return self.render_email(self.date.today(), self.email_recipients, rows=rows)
 
 
 def print_amount(amount: Union[Decimal, float, int]) -> str:
@@ -475,13 +646,13 @@ if __name__ == '__main__':
                         choices=report_types.keys(),
                         help='Platform to generate a report for.')
     parser.add_argument('report_date',
-                        default=(datetime.now() - timedelta(days=1)).strftime(date_format),
+                        default=(datetime.datetime.now() - datetime.timedelta(days=1)).strftime(date_format),
                         nargs='?',
                         help='YYYY-MM-DD to generate a report for. Defaults to yesterday.')
     parser.add_argument('--config',
                         default=Path.cwd() / 'config.json',
                         help='Path to config.json. Default to current directory.')
     arguments = parser.parse_args()
-    date = datetime.strptime(arguments.report_date, date_format).date()
+    date = datetime.datetime.strptime(arguments.report_date, date_format).date()
     report = report_types[arguments.report_type](arguments.config, date)
-    print(report.generate_report())
+    print(report.generateBetterReport())
