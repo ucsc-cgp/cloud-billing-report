@@ -20,7 +20,7 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
                 <tr>
                     <td><a href='#{{ account_id }}'>{{ account_id }}</a></td>
                     <td>{{ billedAmount|print_amount }}</td>
-                    <td>{{ accountTotalsDaily[account_id]|print_amount }}</td>
+                    <td>{{ (accountTotalsDaily[account_id] if account_id in accountTotalsDaily else 0)|print_amount }}</td>
                 </tr>
             {% endfor %}
             </tbody>
@@ -183,7 +183,7 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
                     <tr>
                         <td>{{ service }}</td>
                         <td>{{ amount|print_amount }}</td>
-                        <td>{{ (accountServicesDaily[account_id][service] if service in accountServicesDaily[account_id] else 0)|print_diff }}</td>
+                        <td>{{ (accountServicesDaily[account_id][service] if account_id in accountServicesDaily and service in accountServicesDaily[account_id] else 0)|print_diff }}</td>
                     </tr>
                 {% endfor %}
                 </tbody>
