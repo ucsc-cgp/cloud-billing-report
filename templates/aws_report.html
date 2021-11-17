@@ -191,7 +191,7 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
                 <tr>
                     <td>Grand total</td>
                     <td>{{ accountTotalsMonthly[account_id]|print_amount }}</td>
-                    <td>{{ accountTotalsDaily[account_id]|print_diff }}</td>
+                    <td>{{ (accountTotalsDaily[account_id] if account_id in accountTotalsDaily else 0)|print_diff }}</td>
                 </tr>
                 </tfoot>
             </table>
