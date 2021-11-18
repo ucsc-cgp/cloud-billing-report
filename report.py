@@ -529,7 +529,7 @@ class GCPReport(Report):
             ORDER BY LOWER(project.name) ASC, service.description ASC'''
         query_job = client.query(query)
         rows = list(query_job.result())
-        return self.render_email(self.date.today(), self.email_recipients, rows=rows)
+        return self.render_email(self.date, self.email_recipients, rows=rows)
 
 
 def print_amount(amount: Union[Decimal, float, int]) -> str:
@@ -653,6 +653,10 @@ if __name__ == '__main__':
                         default=Path.cwd() / 'config.json',
                         help='Path to config.json. Default to current directory.')
     arguments = parser.parse_args()
+
+    if arguments.report_type == "gcp":
+        arguments.report_date = (datetime.datetime.now() - datetime.timedelta(days=2)).strftime(date_format)
+
     date = datetime.datetime.strptime(arguments.report_date, date_format).date()
     report = report_types[arguments.report_type](arguments.config, date)
     print(report.generateBetterReport())
