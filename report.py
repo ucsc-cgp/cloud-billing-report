@@ -395,19 +395,22 @@ class AWSReport(Report):
             account = self.accounts.get(row['lineItem/UsageAccountId'], '(unknown)')  # account for resource
             service = row['product/ProductName']  # which type of product this is
             amount = Decimal(row['lineItem/BlendedCost'])  # the cost associated with this
-            resourceId = row['lineItem/ResourceId']  # resource id, not necessarily the arn
+            description = row['lineItem/LineItemDescription']
+            resourceId = row['lineItem/ResourceId'] if len(row['lineItem/ResourceId']) > 0 else \
+                uuid.uuid4().hex[0:7] + " (" + description + ")"  # resource id, not necessarily the arn
             region = row['product/region']  # The region the product was billed from
 
             # monthly cost summary of the resource
-            if len(resourceId) > 0:
-                resources.setdefault(resourceId, report_resource(resourceId, service, '', account, region))
+            resources.setdefault(resourceId, report_resource(resourceId, service, '', account, region))
+
+            if len(row['lineItem/ResourceId']) > 0:
                 resources[resourceId].set_resource_url()
 
-                if row['resourceTags/user:Owner']:
-                    resources[resourceId].add_tag_value("Owner", row['resourceTags/user:Owner'])
-                elif row['resourceTags/user:owner']:
-                    resources[resourceId].add_tag_value("owner", row['resourceTags/user:owner'])
-                resources[resourceId].add_to_monthly_cost(amount)
+            if row['resourceTags/user:Owner']:
+                resources[resourceId].add_tag_value("Owner", row['resourceTags/user:Owner'])
+            elif row['resourceTags/user:owner']:
+                resources[resourceId].add_tag_value("owner", row['resourceTags/user:owner'])
+            resources[resourceId].add_to_monthly_cost(amount)
 
         return resources
 
