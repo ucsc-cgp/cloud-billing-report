@@ -103,7 +103,11 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
     <tbody>
     {% for id, resource in resourceSummaryMonthly.items()|sort(attribute='1.monthly_cost', reverse=True) %}
         <tr>
-            <td><a href="{{ resource.url }}">{{ resource.resource_arn }}</a></td>
+            {% if resource.url is not none %}
+                <td><a href="{{ resource.url }}">{{ resource.resource_arn }}</a></td>
+            {% else %}
+                <td>{{ resource.resource_arn }}</td>
+            {% endif %}
             <td>{{ resource.account_name }}</td>
             <td>{{ resource.resource_type }}</td>
             <td>{{ resource.email if resource.email is not none else ("Shared" if resource.is_shared else "-")  }}</td>

@@ -18,7 +18,7 @@ class report_resource:
         self.daily_cost = 0
         self.monthly_cost = 0
 
-        self.url = ''
+        self.url = None
 
     # sets the resource url if possible, otherwise just links to the dashboard
     def set_resource_url(self):
