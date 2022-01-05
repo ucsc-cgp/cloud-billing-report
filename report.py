@@ -23,7 +23,7 @@ from typing import (
     Iterator,
     Mapping,
     Sequence,
-    Union,
+    Union, Dict,
 )
 
 import boto3
@@ -205,7 +205,7 @@ class AWSReport(Report):
 
         return compliance_list
 
-    def generatePersonalizedComplianceReports(self, reportDate: datetime.date, compliant_resources: list, report_dir="/tmp/personalizedEmails/") -> str:
+    def generatePersonalizedComplianceReports(self, reportDate: datetime.date, compliant_resources: list, noncompliant_resources: list, report_dir="/tmp/personalizedEmails/") -> str:
         # TODO Most billing reports are showing $0.00 for the S3 costs... may need to rethink
         # Create a dictionary, where the key is the email address and the value is the list of resources
         account_resource_dict = {}
@@ -217,6 +217,12 @@ class AWSReport(Report):
                     account_resource_dict[resource.get_email()].append(resource)
                 else:
                     account_resource_dict[resource.get_email()] = [resource]
+
+        for resource in noncompliant_resources:
+            if "righanse@ucsc.edu" in account_resource_dict:
+                account_resource_dict["righanse@ucsc.edu"].append(resource)
+            else:
+                account_resource_dict["righanse@ucsc.edu"] = [resource]
 
         # For every email in our dictionary, generate an email report, make sure the nested directory exists
         Path(report_dir).mkdir(parents=True, exist_ok=True)
@@ -233,10 +239,11 @@ class AWSReport(Report):
         # Create a list of resource objects based on their compliance status
         compliance_list = self.generate_compliance_list()
         compliant_resources = [r for r in compliance_list if r.get_compliance_status() == "COMPLIANT"]
+        noncompliant_resources = [r for r in compliance_list if r.get_compliance_status() == "NON_COMPLIANT"]
 
         # *** Currently set to run everyday ***
         # For Monday only reports: 'if datetime.strptime(today, "%Y-%m-%d").today().weekday() == 0'
-        self.generatePersonalizedComplianceReports(reportDate, compliant_resources)
+        self.generatePersonalizedComplianceReports(reportDate, compliant_resources, noncompliant_resources)
 
     def generateAccountSummary(self, accounts, startDate: datetime.date, endDate: datetime.date):
 
@@ -389,7 +396,7 @@ class AWSReport(Report):
             service = row['product/ProductName']  # which type of product this is
             amount = Decimal(row['lineItem/BlendedCost'])  # the cost associated with this
             resourceId = row['lineItem/ResourceId']  # resource id, not necessarily the arn
-            region = row['product/region'] # The region the product was billed from
+            region = row['product/region']  # The region the product was billed from
 
             # monthly cost summary of the resource
             if len(resourceId) > 0:
@@ -402,10 +409,7 @@ class AWSReport(Report):
                     resources[resourceId].add_tag_value("owner", row['resourceTags/user:owner'])
                 resources[resourceId].add_to_monthly_cost(amount)
 
-        # Get the top 30 most expensive resources
-        topResources = dict(sorted(resources.items(), key=lambda x: x[1].monthly_cost, reverse=True)[:30])
-
-        return topResources
+        return resources
 
     def generateS3StorageSummary(self, startDate: datetime.date, endDate: datetime.date):
         startDate = startDate.strftime("%Y-%m-%d")
@@ -467,6 +471,37 @@ class AWSReport(Report):
 
         return returnDict
 
+    def generateUserCostSummary(self, resourceSummaryMonthlyUnsorted):
+
+        # Aggregate costs on a per-user basis
+        userCostSummary = {}
+        for resource in resourceSummaryMonthlyUnsorted.values():
+            # Determine if the resource has a singular owner, is shared, or is un-owned
+            resourceOwner = resource.get_email() if resource.get_email() is not None else ("Shared" if resource.is_shared else "Unowned")
+            userCostSummary.setdefault(resourceOwner, {})
+            userCostSummary[resourceOwner].setdefault(resource.get_resource_type(), 0)
+            userCostSummary[resourceOwner][resource.get_resource_type()] += resource.get_monthly_cost()
+
+        # Cleanup the data
+        users = list(userCostSummary)
+        for user in users:
+            userServices = list(userCostSummary[user])
+            for service in userServices:
+                # Remove all services that the user paid less than $1 for
+                if userCostSummary[user][service] < 1:
+                    userCostSummary[user].pop(service, None)
+
+            # If the user has no remaining services, remove the user from the list
+            if len(userCostSummary[user].items()) == 0:
+                userCostSummary.pop(user, None)
+
+        # Get up to the top 10 services for each user
+        for user in userCostSummary:
+            n = min(len(userCostSummary[user].items()), 10)
+            userCostSummary[user] = dict(sorted(userCostSummary[user].items(), key=lambda x: x[1], reverse=True)[:n])
+
+        return userCostSummary
+
     def generateBetterReport(self) -> str:
         # Get date variables. We will be making the report for the previous day.
         yesterday = datetime.date.today() - datetime.timedelta(1)
@@ -482,7 +517,9 @@ class AWSReport(Report):
         s3StorageSummaryMonthly = self.generateS3StorageSummary(firstDayOfMonth, lastDayOfMonth)
 
         # Generate a summary on individual resources. This requires downloading the billing CSV
-        resourceSummaryMonthly  = self.generateResourceSummary()
+        resourceSummaryMonthlyUnsorted  = self.generateResourceSummary()
+        resourceSummaryMonthly          = dict(sorted(resourceSummaryMonthlyUnsorted.items(), key=lambda x: x[1].monthly_cost, reverse=True)[:30])
+        userCostSummaryMonthly          = self.generateUserCostSummary(resourceSummaryMonthlyUnsorted)
 
         # This will generate personalized compliance emails for everyone with a tagged resource
         self.generateComplianceSummary(yesterday)
@@ -503,7 +540,8 @@ class AWSReport(Report):
             accountServicesMonthly=accountSummaryMonthly,
             accountServicesDaily=accountSummaryDaily,
             resourceSummaryMonthly=resourceSummaryMonthly,
-            s3StorageSummaryMonthly=s3StorageSummaryMonthly
+            s3StorageSummaryMonthly=s3StorageSummaryMonthly,
+            userCostSummaryMonthly=userCostSummaryMonthly
         )
 
 class GCPReport(Report):
