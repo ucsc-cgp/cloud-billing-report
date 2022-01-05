@@ -205,7 +205,7 @@ class AWSReport(Report):
 
         return compliance_list
 
-    def generatePersonalizedComplianceReports(self, reportDate: datetime.date, compliant_resources: list, report_dir="/tmp/personalizedEmails/") -> str:
+    def generatePersonalizedComplianceReports(self, reportDate: datetime.date, compliant_resources: list, noncompliant_resources: list, report_dir="/tmp/personalizedEmails/") -> str:
         # TODO Most billing reports are showing $0.00 for the S3 costs... may need to rethink
         # Create a dictionary, where the key is the email address and the value is the list of resources
         account_resource_dict = {}
@@ -217,6 +217,12 @@ class AWSReport(Report):
                     account_resource_dict[resource.get_email()].append(resource)
                 else:
                     account_resource_dict[resource.get_email()] = [resource]
+
+        for resource in noncompliant_resources:
+            if "righanse@ucsc.edu" in account_resource_dict:
+                account_resource_dict["righanse@ucsc.edu"].append(resource)
+            else:
+                account_resource_dict["righanse@ucsc.edu"] = [resource]
 
         # For every email in our dictionary, generate an email report, make sure the nested directory exists
         Path(report_dir).mkdir(parents=True, exist_ok=True)
@@ -233,10 +239,11 @@ class AWSReport(Report):
         # Create a list of resource objects based on their compliance status
         compliance_list = self.generate_compliance_list()
         compliant_resources = [r for r in compliance_list if r.get_compliance_status() == "COMPLIANT"]
+        noncompliant_resources = [r for r in compliance_list if r.get_compliance_status() == "NON_COMPLIANT"]
 
         # *** Currently set to run everyday ***
         # For Monday only reports: 'if datetime.strptime(today, "%Y-%m-%d").today().weekday() == 0'
-        self.generatePersonalizedComplianceReports(reportDate, compliant_resources)
+        self.generatePersonalizedComplianceReports(reportDate, compliant_resources, noncompliant_resources)
 
     def generateAccountSummary(self, accounts, startDate: datetime.date, endDate: datetime.date):
 
