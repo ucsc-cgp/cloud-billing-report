@@ -59,6 +59,35 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
 </div>
 
 
+{# Prints the most expesnive costs for each user in the current month #}
+<h2>User cost accounting</h2>
+<caption>Service costs grouped by resource owners. Only services that a user spent more than $1 on are displayed.</caption>
+<table>
+    <thead>
+    <tr>
+        <th>Owner</th>
+        <th>Service</th>
+        <th>{{ report_date|ym }}</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for owner, serviceDict in userCostSummaryMonthly.items() %}
+        <tr>
+            <td>{{ owner }}</td>
+            <td> </td>
+            <td> </td>
+        </tr>
+        {% for service, cost in serviceDict.items() %}
+            <tr>
+                <td> </td>
+                <td>{{ service  }}</td>
+                <td>{{ cost|print_amount }}</td>
+            </tr>
+        {% endfor %}
+    {% endfor %}
+    </tbody>
+</table>
+
 {# Prints the most expesnive resources for the current month #}
 <h2>Resource accounting by cost</h2>
 <table>
