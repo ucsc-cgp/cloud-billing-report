@@ -6,7 +6,7 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
 <div class="row">
     <div class="column">
         {# Prints the total amount spent by each account #}
-        <h2>Totals by account</h2>
+        <h2>Totals by account (Managed)</h2>
         <table>
             <thead>
             <tr>
@@ -16,19 +16,49 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
             </tr>
             </thead>
             <tbody>
-            {% for account_id, billedAmount in accountTotalsMonthly.items()|sort %}
+            {% for account_id, billedAmount in totalsByManagedAccountMonthly.items()|sort %}
                 <tr>
                     <td><a href='#{{ account_id }}'>{{ account_id }}</a></td>
                     <td>{{ billedAmount|print_amount }}</td>
-                    <td>{{ (accountTotalsDaily[account_id] if account_id in accountTotalsDaily else 0)|print_amount }}</td>
+                    <td>{{ (totalsByManagedAccountDaily[account_id] if account_id in totalsByManagedAccountDaily else 0)|print_amount }}</td>
                 </tr>
             {% endfor %}
             </tbody>
             <tfoot>
             <tr>
                 <td>Grand total</td>
-                <td>{{ accountTotalsMonthly|sum_values|print_amount }}</td>
-                <td>{{ accountTotalsDaily|sum_values|print_amount }}</td>
+                <td>{{ totalsByManagedAccountMonthly|sum_values|print_amount }}</td>
+                <td>{{ totalsByManagedAccountDaily|sum_values|print_amount }}</td>
+            </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    <div class="column">
+        {# Prints the total amount spent by each account #}
+        <h2>Totals by account (Unmanaged)</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Account</th>
+                <th>{{ report_date|ym }}</th>
+                <th>{{ report_date|ymd }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for account_id, billedAmount in totalsByUnmanagedAccountMonthly.items()|sort %}
+                <tr>
+                    <td><a href='#{{ account_id }}'>{{ account_id }}</a></td>
+                    <td>{{ billedAmount|print_amount }}</td>
+                    <td>{{ (totalsByUnmanagedAccountDaily[account_id] if account_id in totalsByUnmanagedAccountDaily else 0)|print_amount }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+            <tfoot>
+            <tr>
+                <td>Grand total</td>
+                <td>{{ totalsByUnmanagedAccountMonthly|sum_values|print_amount }}</td>
+                <td>{{ totalsByUnmanagedAccountDaily|sum_values|print_amount }}</td>
             </tr>
             </tfoot>
         </table>
