@@ -474,11 +474,15 @@ class AWSReport(Report):
 
         return returnDict
 
-    def generateUserCostSummary(self, resourceSummaryMonthlyUnsorted):
+    def generateUserCostSummary(self, resourceSummaryMonthlyUnsorted, accounts):
 
         # Aggregate costs on a per-user basis
         userCostSummary = {}
         for resource in resourceSummaryMonthlyUnsorted.values():
+
+            if resource.get_account_name() not in accounts.values():
+                continue
+
             # Determine if the resource has a singular owner, is shared, or is un-owned
             resourceOwner = resource.get_email() if resource.get_email() is not None else ("Shared" if resource.is_shared else "Unowned")
             userCostSummary.setdefault(resourceOwner, {})
@@ -522,17 +526,27 @@ class AWSReport(Report):
         # Generate a summary on individual resources. This requires downloading the billing CSV
         resourceSummaryMonthlyUnsorted  = self.generateResourceSummary()
         resourceSummaryMonthly          = dict(sorted(resourceSummaryMonthlyUnsorted.items(), key=lambda x: x[1].monthly_cost, reverse=True)[:30])
-        userCostSummaryMonthly          = self.generateUserCostSummary(resourceSummaryMonthlyUnsorted)
+        userCostSummaryMonthly          = self.generateUserCostSummary(resourceSummaryMonthlyUnsorted, self.compliance["accounts"])
 
         # This will generate personalized compliance emails for everyone with a tagged resource
         self.generateComplianceSummary(yesterday)
+
+        # Create a list of managed accounts
+        managedAccounts = [self.compliance["accounts"][k] for k in self.compliance["accounts"]]
 
         # Create some simple aggregations, convert the strings sent over by AWS to floats
         totalsByAccountMonthly = {k: sum(accountSummaryMonthly[k].values()) for k in accountSummaryMonthly}
         totalsByAccountDaily   = {k: sum(accountSummaryDaily[k].values()) for k in accountSummaryDaily}
         totalsByServiceMonthly = {k: sum(usageTypeSummaryMonthly[k].values()) for k in usageTypeSummaryMonthly}
 
-        # Render the email using Jinja
+        # Group accounts by managed and unmanaged
+        totalsByManagedAccountMonthly = {k: totalsByAccountMonthly[k] for k in totalsByAccountMonthly if k in managedAccounts}
+        totalsByManagedAccountDaily = {k: totalsByAccountDaily[k] for k in totalsByAccountDaily if k in managedAccounts}
+        totalsByUnmanagedAccountMonthly = {k: totalsByAccountMonthly[k] for k in totalsByAccountMonthly if k not in managedAccounts}
+        totalsByUnmanagedAccountDaily = {k: totalsByAccountDaily[k] for k in totalsByAccountDaily if k not in managedAccounts}
+
+
+    # Render the email using Jinja
         return self.render_email(
             yesterday,
             self.email_recipients,
@@ -544,7 +558,11 @@ class AWSReport(Report):
             accountServicesDaily=accountSummaryDaily,
             resourceSummaryMonthly=resourceSummaryMonthly,
             s3StorageSummaryMonthly=s3StorageSummaryMonthly,
-            userCostSummaryMonthly=userCostSummaryMonthly
+            userCostSummaryMonthly=userCostSummaryMonthly,
+            totalsByManagedAccountMonthly=totalsByManagedAccountMonthly,
+            totalsByManagedAccountDaily=totalsByManagedAccountDaily,
+            totalsByUnmanagedAccountMonthly=totalsByUnmanagedAccountMonthly,
+            totalsByUnmanagedAccountDaily=totalsByUnmanagedAccountDaily
         )
 
 class GCPReport(Report):
