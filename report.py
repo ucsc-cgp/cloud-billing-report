@@ -505,7 +505,10 @@ class AWSReport(Report):
         # Get up to the top 10 services for each user
         for user in userCostSummary:
             n = min(len(userCostSummary[user].items()), 10)
-            userCostSummary[user] = dict(sorted(userCostSummary[user].items(), key=lambda x: x[1], reverse=True)[:n])
+            cost_list = sorted(userCostSummary[user].items(), key=lambda x: x[1], reverse=True)[:n]
+            total_cost = sum([cost for (service, cost) in cost_list])
+            cost_list.append(("Total", total_cost))
+            userCostSummary[user] = dict(cost_list)
 
         return userCostSummary
 
@@ -527,6 +530,7 @@ class AWSReport(Report):
         resourceSummaryMonthlyUnsorted  = self.generateResourceSummary()
         resourceSummaryMonthly          = dict(sorted(resourceSummaryMonthlyUnsorted.items(), key=lambda x: x[1].monthly_cost, reverse=True)[:30])
         userCostSummaryMonthly          = self.generateUserCostSummary(resourceSummaryMonthlyUnsorted, self.compliance["accounts"])
+        totalUserCostMonthly            = sum([user_costs['Total'] for (user, user_costs) in userCostSummaryMonthly.items()])
 
         # This will generate personalized compliance emails for everyone with a tagged resource
         self.generateComplianceSummary(yesterday)
@@ -559,6 +563,7 @@ class AWSReport(Report):
             resourceSummaryMonthly=resourceSummaryMonthly,
             s3StorageSummaryMonthly=s3StorageSummaryMonthly,
             userCostSummaryMonthly=userCostSummaryMonthly,
+            totalUserCostMonthly=totalUserCostMonthly,
             totalsByManagedAccountMonthly=totalsByManagedAccountMonthly,
             totalsByManagedAccountDaily=totalsByManagedAccountDaily,
             totalsByUnmanagedAccountMonthly=totalsByUnmanagedAccountMonthly,
