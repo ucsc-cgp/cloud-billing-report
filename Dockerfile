@@ -9,4 +9,4 @@ COPY report.py .
 COPY src/ src/
 RUN mkdir -p tmp/personalizedEmails/
 
-ENTRYPOINT ["python", "report.py"]
+ENTRYPOINT ["python3", "report.py"]
