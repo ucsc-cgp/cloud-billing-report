@@ -380,7 +380,7 @@ class AWSReport(Report):
 
         return returnDict
 
-    def generateResourceSummary(self):
+    def generateResourceSummary(self, accounts):
         reportCsvLines = self.usage_csv()
         reportCsv = csv.DictReader(reportCsvLines)
 
@@ -393,6 +393,11 @@ class AWSReport(Report):
                 continue
 
             account = self.accounts.get(row['lineItem/UsageAccountId'], '(unknown)')  # account for resource
+
+            # Skip this line item if the resource is not in a compliance account
+            if account not in accounts.values():
+                continue
+
             service = row['product/ProductName']  # which type of product this is
             amount = Decimal(row['lineItem/BlendedCost'])  # the cost associated with this
             description = row['lineItem/LineItemDescription']
@@ -527,7 +532,7 @@ class AWSReport(Report):
         s3StorageSummaryMonthly = self.generateS3StorageSummary(firstDayOfMonth, lastDayOfMonth)
 
         # Generate a summary on individual resources. This requires downloading the billing CSV
-        resourceSummaryMonthlyUnsorted  = self.generateResourceSummary()
+        resourceSummaryMonthlyUnsorted  = self.generateResourceSummary(self.compliance["accounts"])
         resourceSummaryMonthly          = dict(sorted(resourceSummaryMonthlyUnsorted.items(), key=lambda x: x[1].monthly_cost, reverse=True)[:30])
         userCostSummaryMonthly          = self.generateUserCostSummary(resourceSummaryMonthlyUnsorted, self.compliance["accounts"])
         totalUserCostMonthly            = sum([user_costs['Total'] for (user, user_costs) in userCostSummaryMonthly.items()])
