@@ -101,7 +101,7 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
     </tr>
     </thead>
     <tbody>
-    {% for owner, serviceDict in userCostSummaryMonthly.items() %}
+    {% for owner, serviceDict in userCostSummaryMonthly.items()|sort(attribute='1.Total', reverse=True) %}
         <tr>
             <td>{{ owner }}</td>
             <td> </td>
@@ -116,6 +116,13 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
         {% endfor %}
     {% endfor %}
     </tbody>
+    <tfoot>
+    <tr>
+        <td>Grand total</td>
+        <td> </td>
+        <td>{{ totalUserCostMonthly|print_amount }}</td>
+    </tr>
+    </tfoot>
 </table>
 
 {# Prints the most expesnive resources for the current month #}

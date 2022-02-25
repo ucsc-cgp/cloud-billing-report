@@ -380,7 +380,7 @@ class AWSReport(Report):
 
         return returnDict
 
-    def generateResourceSummary(self):
+    def generateResourceSummary(self, accounts):
         reportCsvLines = self.usage_csv()
         reportCsv = csv.DictReader(reportCsvLines)
 
@@ -393,6 +393,11 @@ class AWSReport(Report):
                 continue
 
             account = self.accounts.get(row['lineItem/UsageAccountId'], '(unknown)')  # account for resource
+
+            # Skip this line item if the resource is not in a compliance account
+            if account not in accounts.values():
+                continue
+
             service = row['product/ProductName']  # which type of product this is
             amount = Decimal(row['lineItem/BlendedCost'])  # the cost associated with this
             description = row['lineItem/LineItemDescription']
@@ -505,7 +510,10 @@ class AWSReport(Report):
         # Get up to the top 10 services for each user
         for user in userCostSummary:
             n = min(len(userCostSummary[user].items()), 10)
-            userCostSummary[user] = dict(sorted(userCostSummary[user].items(), key=lambda x: x[1], reverse=True)[:n])
+            cost_list = sorted(userCostSummary[user].items(), key=lambda x: x[1], reverse=True)[:n]
+            total_cost = sum([cost for (service, cost) in cost_list])
+            cost_list.append(("Total", total_cost))
+            userCostSummary[user] = dict(cost_list)
 
         return userCostSummary
 
@@ -524,9 +532,10 @@ class AWSReport(Report):
         s3StorageSummaryMonthly = self.generateS3StorageSummary(firstDayOfMonth, lastDayOfMonth)
 
         # Generate a summary on individual resources. This requires downloading the billing CSV
-        resourceSummaryMonthlyUnsorted  = self.generateResourceSummary()
+        resourceSummaryMonthlyUnsorted  = self.generateResourceSummary(self.compliance["accounts"])
         resourceSummaryMonthly          = dict(sorted(resourceSummaryMonthlyUnsorted.items(), key=lambda x: x[1].monthly_cost, reverse=True)[:30])
         userCostSummaryMonthly          = self.generateUserCostSummary(resourceSummaryMonthlyUnsorted, self.compliance["accounts"])
+        totalUserCostMonthly            = sum([user_costs['Total'] for (user, user_costs) in userCostSummaryMonthly.items()])
 
         # This will generate personalized compliance emails for everyone with a tagged resource
         self.generateComplianceSummary(yesterday)
@@ -559,6 +568,7 @@ class AWSReport(Report):
             resourceSummaryMonthly=resourceSummaryMonthly,
             s3StorageSummaryMonthly=s3StorageSummaryMonthly,
             userCostSummaryMonthly=userCostSummaryMonthly,
+            totalUserCostMonthly=totalUserCostMonthly,
             totalsByManagedAccountMonthly=totalsByManagedAccountMonthly,
             totalsByManagedAccountDaily=totalsByManagedAccountDaily,
             totalsByUnmanagedAccountMonthly=totalsByUnmanagedAccountMonthly,
