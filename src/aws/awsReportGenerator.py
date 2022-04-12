@@ -17,7 +17,7 @@ class AwsReportGenerator:
         self.config = config
         self.date = date
     
-    def downloadReport(self):
+    def downloadReport(self, downloadDir):
         # Create an S3 Client
         s3 = boto3.client(Config.AWS_S3_CLIENT,
                           aws_access_key_id=self.config.awsAccessKey,
@@ -28,7 +28,7 @@ class AwsReportGenerator:
                                                                               self.date)
 
         # Download the CSV file locally
-        csvGzipFilePath = downloadAwsBillingCsv.downloadAwsBillingCsv(s3, self.config.awsS3Bucket, objectPath, Config.DATA_DIR, Config.MANIFEST_FILE, Config.CSV_FILE)
+        csvGzipFilePath = downloadAwsBillingCsv.downloadAwsBillingCsv(s3, self.config.awsS3Bucket, objectPath, downloadDir, Config.MANIFEST_FILE, Config.CSV_FILE)
 
         return csvGzipFilePath
     

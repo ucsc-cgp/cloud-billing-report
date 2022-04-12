@@ -8,23 +8,30 @@ class Main:
             
         # import the AWS report generator
         from src.aws.awsReportGenerator import AwsReportGenerator
+        import tempfile
         
         # Download and create the aggregator from scratch
         report = AwsReportGenerator(config, date)
-        
+
+        # Create a temporary directory
+        tempDir = tempfile.TemporaryDirectory()
+
         # Download the billing CSV and load it into a list
-        csvGzipFilePath = report.downloadReport()
+        csvGzipFilePath = report.downloadReport(tempDir.name)
         billingReport   = report.loadReport(csvGzipFilePath)
 
         # Aggregate the data into AWS resource objects
         aggregator      = report.createAggregator(billingReport)
-        
+
         # Split resources based on whether or not they are in managed or unmanaged accounts
         managedResources, unmanagedResources = report.splitResourcesByManagedAndUnmanaged(aggregator.getAllResources())
-        
+
         # Create the bulk and individual emails
         report.createBulkEmail(aggregator, managedResources, unmanagedResources, config.EMAIL_DIR)
         report.createIndividualEmails(aggregator, managedResources, config.EMAIL_DIR)
+
+        # Cleanup
+        tempDir.cleanup()
 
     def runGcpReport(self, config, date):
 
