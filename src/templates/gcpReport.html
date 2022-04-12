@@ -1,0 +1,63 @@
+{% extends '_base.html' %}
+{% set platform = 'GCP' %}
+{% block main %}
+    Google Cloud Platform Report for {{ reportDate.strftime('%A, %d %B %Y') }}<br>
+
+    <h2>Totals by project</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>Project</th>
+            <th>{{ reportDate|ym }}</th>
+            <th>{{ reportDate|ymd }}</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for accountName, resources in accountSummary.items() %}
+            <tr>
+                <td><a href='#{{ accountName }}'>{{ accountName }}</a></td>
+                <td>${{ resources | sum(attribute='costPacket.monthlyCost') }}</td>
+                <td>${{ resources | sum(attribute='costPacket.dailyCost') }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+        <tr>
+            <td>Grand total</td>
+            <td>${{ allResources | sum(attribute='costPacket.monthlyCost') }}</td>
+            <td>${{ allResources | sum(attribute='costPacket.dailyCost') }}</td>
+        </tr>
+        </tfoot>
+    </table>
+
+    {% for accountName, serviceSum in accountServiceSummary.items() %}
+      <a name='{{ accountName }}' id='{{ accountName }}'></a>
+      <h2>Report for project {{ accountName }}</h2>
+      <table>
+        <thead>
+        <tr>
+          <th>Service</th>
+          <th>{{ reportDate|ym }}</th>
+          <th>{{ reportDate|ymd }}</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for service, resources in serviceSum.items() %}
+          <tr>
+            <td>{{ service }}</td>
+            <td>${{ resources | sum(attribute='costPacket.monthlyCost') }}</td>
+            <td>${{ resources | sum(attribute='costPacket.dailyCost') }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+        <tr>
+          <td>Grand total</td>
+          <td>${{ accountSummary[accountName] | sum(attribute='costPacket.monthlyCost') }}</td>
+          <td>${{ accountSummary[accountname] | sum(attribute='costPacket.dailyCost') }}</td>
+        </tr>
+        </tfoot>
+      </table>
+    {% endfor %}
+
+{% endblock main %}

@@ -1,0 +1,219 @@
+{% extends '_base.html' %}
+{% set platform = 'AWS' %}
+{% block main %}
+Amazon Web Services Report for {{ reportDate.strftime('%A, %d %B %Y') }}<br>
+
+<div class="row">
+    <div class="column">
+        {# Prints the total amount spent by each account #}
+        <h2>Totals by account (Managed)</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Account</th>
+                <th>{{ reportDate|ym }}</th>
+                <th>{{ reportDate|ymd }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for accountId, costPacket in managedAccountSum.items()|sort(attribute='1.monthlyCost', reverse=True) %}
+                <tr>
+                    <td><a href='#{{ accountId }}'>{{ allAccounts[accountId] }}</a></td>
+                    <td>${{ costPacket.monthlyCost }}</td>
+                    <td>${{ costPacket.dailyCost }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+            <tfoot>
+            <tr>
+                <td>Grand total</td>
+                <td>${{ managedAccountSum.items() | sum(attribute='1.monthlyCost') }}</td>
+                <td>${{ managedAccountSum.items() | sum(attribute='1.dailyCost') }}</td>
+            </tr>
+            </tfoot>
+        </table>
+    </div>
+    
+    <div class="column">
+        {# Prints the total amount spent by each account #}
+        <h2>Totals by account (Unmanaged)</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Account</th>
+                <th>{{ reportDate|ym }}</th>
+                <th>{{ reportDate|ymd }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for accountId, costPacket in unmanagedAccountSum.items()|sort(attribute='1.monthlyCost', reverse=True) %}
+                <tr>
+                    <td><a href='#{{ accountId }}'>{{ allAccounts[accountId] }}</a></td>
+                    <td>${{ costPacket.monthlyCost }}</td>
+                    <td>${{ costPacket.dailyCost }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+            <tfoot>
+            <tr>
+                <td>Grand total</td>
+                <td>${{ unmanagedAccountSum.items() | sum(attribute='1.monthlyCost') }}</td>
+                <td>${{ unmanagedAccountSum.items() | sum(attribute='1.dailyCost') }}</td>
+            </tr>
+            </tfoot>
+        </table>
+    </div>
+    
+    <div class="column">
+        <h2>Totals by service (Managed)</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Service</th>
+                <th>{{ reportDate|ym }}</th>
+                <th>{{ reportDate|ymd }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for service, costPacket in serviceSum.items()|sort(attribute='1.monthlyCost', reverse=True) %}
+                <tr>
+                    <td>{{ service }}</td>
+                    <td>${{ costPacket.monthlyCost }}</td>
+                    <td>${{ costPacket.dailyCost }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+</div>
+
+<div>
+    <h2>Service Expenditure by Owner</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Owner</th>
+                <th>Service</th>
+                <th>Cost</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for owner, serviceDict in ownerServiceSum.items()|sort(attribute='1.Total.monthlyCost', reverse=True) %}
+            <tr>
+                <td>{{ owner }}</td>
+                <td> </td>
+                <td> </td>
+            </tr>
+            {% for service, costPacket in serviceDict.items() %}
+                <tr>
+                    <td> </td>
+                    <td>{{ service  }}</td>
+                    <td>${{ costPacket.monthlyCost }}</td>
+                </tr>
+            {% endfor %}
+        {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td>Grand total</td>
+                <td> </td>
+                <td>${{ ownerServiceSum.items() | sum(attribute='1.Total.monthlyCost') }}</td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+
+<div>
+    <h2>High cost resources</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Resource</th>
+                <th>Account</th>
+                <th>Owner</th>
+                <th>Service</th>
+                <th>Usage Type</th>
+                <th>Cost</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for resourceId, usageDict in resourceUsageSum.items()|sort(attribute='1.Total.monthlyCost', reverse=True) %}
+            <tr>
+                <td>{{ resourceId }}</td>
+                <td>{{ allAccounts[allResourcesDict[resourceId].accountId]}} </td>
+                <td>{{ allResourcesDict[resourceId].owner }} </td>
+                <td>{{ allResourcesDict[resourceId].serviceType }}</td>
+                <td> </td>
+                <td> </td>
+            </tr>
+            {% for usageType, costPacket in usageDict.items() %}
+                <tr>
+                    <td> </td>
+                    <td> </td>
+                    <td> </td>
+                    <td> </td>
+                    <td>{{ usageType  }}</td>
+                    <td>${{ costPacket.monthlyCost }}</td>
+                </tr>
+            {% endfor %}
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="row">
+    {% for service, usageDict in serviceUsageSum.items()|sort %}
+    <div class="column">
+        <h2>{{ service }} usage costs</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Usage Type</th>
+                <th>{{ reportDate|ym }}</th>
+                <th>{{ reportDate|ymd }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for usageType, costPacket in usageDict.items() %}
+                <tr>
+                    <td>{{ usageType }}</td>
+                    <td>${{ costPacket.monthlyCost }}</td>
+                    <td>${{ costPacket.dailyCost }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endfor %}
+</div>
+
+
+{% for accountId, serviceDict in accountServiceSum.items()|sort %}
+<div class="accountRow">
+    <a name='{{ accountId }}' id='{{ accountId }}'></a>
+    <h2>Report for account {{ allAccounts[accountId] }}</h2>
+
+    <table>
+        <caption>Service Summary</caption>
+        <thead>
+        <tr>
+            <th>Service</th>
+            <th>{{ reportDate|ym }}</th>
+            <th>{{ reportDate|ymd }}</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for service, costPacket in serviceDict.items() %}
+            <tr>
+                <td>{{ service }}</td>
+                <td>${{ costPacket.monthlyCost }}</td>
+                <td>${{ costPacket.dailyCost }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endfor %}
+
+{% endblock main %}

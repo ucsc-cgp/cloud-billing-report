@@ -1,3 +1,5 @@
 *.eml
 config.json
+venv/**
+data/**
 __pycache__/

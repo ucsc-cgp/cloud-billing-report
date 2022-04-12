@@ -1,0 +1,36 @@
+{% extends '_base.html' %}
+{% set platform = 'AWS' %}
+{% block main %}
+Amazon Web Services Report for {{ reportDate.strftime('%A, %d %B %Y') }}<br>
+
+<div class="column">
+    {# Prints the total amount spent by each account #}
+    <h2>Your tagged resources</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>Account</th>
+            <th>Resource ID</th>
+        </tr>
+        </thead>
+        <tbody>
+
+        {% for accountId, resourceSum in ownerSummary.items() %}
+            <tr>
+            <td>{{ allAccounts[accountId] }}</td>
+            <td> </td>
+            </tr>
+            {% for resourceId, costPacket in resourceSum.items()|sort(attribute='1.monthlyCost', reverse=True) %}
+                <tr>
+                <td> </td>
+                <td>{{ resourceId }}</td>
+                </tr>
+            {% endfor %}
+        {% endfor %}
+
+        </tbody>
+    </table>
+</div>
+
+
+{% endblock main %}
