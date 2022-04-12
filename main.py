@@ -3,8 +3,6 @@ import datetime
 import argparse
 
 class Main:
-
-    EMAIL_DIR = "/tmp/personalizedEmails/"
     
     def runAwsReport(self, config, date):
             
@@ -25,8 +23,8 @@ class Main:
         managedResources, unmanagedResources = report.splitResourcesByManagedAndUnmanaged(aggregator.getAllResources())
         
         # Create the bulk and individual emails
-        report.createBulkEmail(aggregator, managedResources, unmanagedResources, Main.EMAIL_DIR)
-        report.createIndividualEmails(aggregator, managedResources, Main.EMAIL_DIR)
+        report.createBulkEmail(aggregator, managedResources, unmanagedResources, config.EMAIL_DIR)
+        report.createIndividualEmails(aggregator, managedResources, config.EMAIL_DIR)
 
     def runGcpReport(self, config, date):
 
@@ -44,7 +42,7 @@ class Main:
         gcpSummary = aggregator.createGcpResources()
 
         # Create the bulk email
-        report.createBulkEmail(aggregator, gcpSummary, Main.EMAIL_DIR)
+        report.createBulkEmail(aggregator, gcpSummary, config.EMAIL_DIR)
 
 if __name__ == '__main__':
 
@@ -55,7 +53,7 @@ if __name__ == '__main__':
 
     # Create the runner and load our config file
     runner = Main()
-    config = Config("/config.json")
+    config = Config("config.json")
 
     if args.reportType == 'aws':
         # Run the AWS report

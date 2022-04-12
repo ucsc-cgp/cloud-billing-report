@@ -11,6 +11,7 @@ class Config:
 
     # File Paths
     DATA_DIR      = "data/"
+    EMAIL_DIR     = "/tmp/personalizedEmails"
     MANIFEST_FILE = "manifest.json"
     CSV_FILE      = "billingReport.csv"
     
@@ -73,7 +74,3 @@ class Config:
         # who is sending the email and where they are going
         self.gcpEmailSender = gcpJson["from"]
         self.gcpEmailRecipients = gcpJson["recipients"]
-        
-        
-        
-        
