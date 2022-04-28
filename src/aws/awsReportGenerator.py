@@ -70,8 +70,14 @@ class AwsReportGenerator:
                       "owner"    : aggregator.aggregateByOwner,
                       "resource" : aggregator.aggregateByResourceId,
                       "usage"    : aggregator.aggregateByUsageType}
-        currentAggregationMethod = aggMethods[aggregationOrder.pop(0)]
+        aggMethodName = aggregationOrder.pop(0)
+        currentAggregationMethod = aggMethods[aggMethodName]
         summary = currentAggregationMethod(resourceList)
+
+        # The usage aggregation returns cost packets rather than resource objects to preserve memory
+        # Thus, if we've already run the aggregations for usage types, we can just return
+        if aggMethodName == "usage":
+            return summary
         
         # If this was our final aggregation, calculate the cost packets and then return
         if len(aggregationOrder) == 0:

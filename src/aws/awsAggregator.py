@@ -1,5 +1,6 @@
 from src.aws.awsResource import AwsResource
 from src.utils.config import Config
+from src.utils.costPacket import CostPacket
 import src.aws.downloadAwsBillingCsv
 import boto3
 import datetime
@@ -115,21 +116,34 @@ class AwsResourceAggregator:
         
         # Resources are already aggregated by ID, just convert it into the properform
         return {resource.getResourceId(): [resource] for resource in resourceList}
-    
+
+    # To avoid memory issues, the usage summary aggregates costs in here, instead of returning resource objects
     def aggregateByUsageType(self, resourceList):
-        
-        usageTypes = []
-        
-        # Usage Types are on an individual resource basis
-        for resource in resourceList:
-            usageTypes += list(resource.getUsageTypes().keys())
-            
-        usageTypes = {ut: [] for ut in set(usageTypes)}
-        
+
+        usageTypes = {}
+        dailyTotal = 0
+        monthlyTotal = 0
         for r in resourceList:
             for usageType in r.getUsageTypes().keys():
-                usageTypes[usageType].append(r.createResourceCopyWithOneUsageType(usageType))
-                
+                usageTypes.setdefault(usageType, CostPacket(0,0))
+
+                dailyCost = int(r.getUsageTypes()[usageType].getDailyCost())
+                monthlyCost = int(r.getUsageTypes()[usageType].getMonthlyCost())
+
+                # Add usage cost summary
+                usageTypes[usageType].addDailyCost(dailyCost)
+                usageTypes[usageType].addMonthlyCost(monthlyCost)
+
+                # Add totals
+                dailyTotal += dailyCost
+                monthlyTotal += monthlyCost
+
+        for r in resourceList:
+            for ut in r.getUsageTypes().keys():
+                if ut in usageTypes and usageTypes[ut].getMonthlyCost() < 1:
+                    usageTypes.pop(ut, None)
+
+        usageTypes["Total"] = CostPacket(dailyTotal, monthlyTotal)
         return usageTypes
     
     def sumDailyCosts(self, resourceList):
