@@ -399,6 +399,7 @@ class AWSReport(Report):
                 continue
 
             service = row['product/ProductName']  # which type of product this is
+            usage_type = row['lineItem/UsageType']
             amount = Decimal(row['lineItem/BlendedCost'])  # the cost associated with this
             description = row['lineItem/LineItemDescription']
             resourceId = row['lineItem/ResourceId'] if len(row['lineItem/ResourceId']) > 0 else \
@@ -416,10 +417,14 @@ class AWSReport(Report):
             elif row['resourceTags/user:owner']:
                 resources[resourceId].add_tag_value("owner", row['resourceTags/user:owner'])
             resources[resourceId].add_to_monthly_cost(amount)
+            resources[resourceId].add_usage_type(usage_type, amount)
 
         return resources
 
-    def generateS3StorageSummary(self, startDate: datetime.date, endDate: datetime.date):
+    def generateS3StorageSummary(self, accounts, startDate: datetime.date, endDate: datetime.date):
+
+        accountIds = list(accounts.keys())
+
         startDate = startDate.strftime("%Y-%m-%d")
         endDate = endDate.strftime("%Y-%m-%d")
 
@@ -448,7 +453,12 @@ class AWSReport(Report):
                             "Key": "SERVICE",
                             "Values": ["Amazon Simple Storage Service"]
                         }
-                    }]
+                    },  {
+                       "Dimensions": {
+                           "Key": "LINKED_ACCOUNT",
+                           "Values": accountIds
+                       }
+                   }]
             },
             Metrics = ["UsageQuantity", "BlendedCost"],
             GroupBy = [
@@ -473,7 +483,7 @@ class AWSReport(Report):
             usageCost = float(group["Metrics"]["BlendedCost"]["Amount"])
 
             # We only care about how GBs are flowing in/out and stored in S3 buckets
-            if "GB" in usageUnit:
+            if "GB-Month" in usageUnit:
                 assert usageType not in returnDict
                 returnDict[usageType] = {"usageCost": usageCost, "usageAmount": usageAmount, "usageUnit": usageUnit}
 
@@ -528,8 +538,8 @@ class AWSReport(Report):
         accountSummaryMonthly   = self.generateAccountSummary(self.accounts, firstDayOfMonth, lastDayOfMonth)
         accountSummaryDaily     = self.generateAccountSummary(self.accounts, yesterday, yesterday + datetime.timedelta(1))
 
-        usageTypeSummaryMonthly = self.generateUsageTypeSummary(self.accounts, firstDayOfMonth, lastDayOfMonth)
-        s3StorageSummaryMonthly = self.generateS3StorageSummary(firstDayOfMonth, lastDayOfMonth)
+        usageTypeSummaryMonthly = self.generateUsageTypeSummary(self.compliance["accounts"], firstDayOfMonth, lastDayOfMonth)
+        s3StorageSummaryMonthly = self.generateS3StorageSummary(self.compliance["accounts"], firstDayOfMonth, lastDayOfMonth)
 
         # Generate a summary on individual resources. This requires downloading the billing CSV
         resourceSummaryMonthlyUnsorted  = self.generateResourceSummary(self.compliance["accounts"])

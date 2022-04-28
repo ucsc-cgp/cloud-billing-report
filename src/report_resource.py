@@ -6,6 +6,7 @@ class report_resource:
         self.account_id = account_id
         self.account_name = account_name
         self.region = region
+        self.usage_types = {}
         self.compliance_status = None
         self.tag_status = {
             "Owner": None,
@@ -19,6 +20,10 @@ class report_resource:
         self.monthly_cost = 0
 
         self.url = None
+
+    def add_usage_type(self, usage_type, amount):
+        self.usage_types.setdefault(usage_type, 0)
+        self.usage_types[usage_type] += amount
 
     # sets the resource url if possible, otherwise just links to the dashboard
     def set_resource_url(self):
