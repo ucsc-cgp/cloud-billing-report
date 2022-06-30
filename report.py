@@ -23,8 +23,9 @@ from typing import (
     Iterator,
     Mapping,
     Sequence,
-    Union, Dict,
+    Union,
 )
+import uuid
 
 import boto3
 from dateutil.relativedelta import (
@@ -35,12 +36,15 @@ from google.cloud import (
 )
 import jinja2
 
-from src.compliance_report import compliance_report
-from src.Boto3_STS_Service import Boto3_STS_Service
-
-import uuid
-from pathlib import Path
-from src.report_resource import report_resource
+from src.Boto3_STS_Service import (
+    Boto3_STS_Service,
+)
+from src.compliance_report import (
+    compliance_report,
+)
+from src.report_resource import (
+    report_resource,
+)
 
 
 class Report:
@@ -201,11 +205,16 @@ class AWSReport(Report):
             arn_list.append(f"arn:aws:iam::{k}:role/{compliance_config['iam_role_name']}")
 
         cr = compliance_report()
-        compliance_list = cr.generate_full_compliance_report(bss, account_id_list, account_name_list, arn_list, region_list)
+        compliance_list = cr.generate_full_compliance_report(bss, account_id_list, account_name_list, arn_list,
+                                                             region_list)
 
         return compliance_list
 
-    def generatePersonalizedComplianceReports(self, reportDate: datetime.date, compliant_resources: list, noncompliant_resources: list, report_dir="/tmp/personalizedEmails/") -> str:
+    def generatePersonalizedComplianceReports(self,
+                                              reportDate: datetime.date,
+                                              compliant_resources: list,
+                                              noncompliant_resources: list,
+                                              report_dir="/tmp/personalizedEmails/") -> str:
         # TODO Most billing reports are showing $0.00 for the S3 costs... may need to rethink
         # Create a dictionary, where the key is the email address and the value is the list of resources
         account_resource_dict = {}
@@ -258,12 +267,12 @@ class AWSReport(Report):
 
         # Make the request
         result = billingClient.get_cost_and_usage(
-            TimePeriod = {
+            TimePeriod={
                 'Start': startDate,
                 'End': endDate
             },
-            Granularity = "MONTHLY",
-            Filter = {
+            Granularity="MONTHLY",
+            Filter={
                 "And": [
                     {
                         "Not": {
@@ -279,8 +288,8 @@ class AWSReport(Report):
                         }
                     }]
             },
-            Metrics = ["BlendedCost"],
-            GroupBy = [
+            Metrics=["BlendedCost"],
+            GroupBy=[
                 {
                     'Type': 'DIMENSION',
                     'Key': "LINKED_ACCOUNT"
@@ -326,12 +335,12 @@ class AWSReport(Report):
 
         # Make the request
         result = billingClient.get_cost_and_usage(
-            TimePeriod = {
+            TimePeriod={
                 'Start': startDate,
                 'End': endDate
             },
-            Granularity = "MONTHLY",
-            Filter = {
+            Granularity="MONTHLY",
+            Filter={
                 "And": [
                     {
                         "Not": {
@@ -347,8 +356,8 @@ class AWSReport(Report):
                         }
                     }]
             },
-            Metrics = ["BlendedCost"],
-            GroupBy = [
+            Metrics=["BlendedCost"],
+            GroupBy=[
                 {
                     'Type': 'DIMENSION',
                     'Key': "SERVICE"
@@ -434,12 +443,12 @@ class AWSReport(Report):
 
         # Make the request
         result = billingClient.get_cost_and_usage(
-            TimePeriod = {
+            TimePeriod={
                 'Start': startDate,
                 'End': endDate
             },
-            Granularity = "MONTHLY",
-            Filter = {
+            Granularity="MONTHLY",
+            Filter={
                 "And": [
                     {
                         "Not": {
@@ -453,15 +462,15 @@ class AWSReport(Report):
                             "Key": "SERVICE",
                             "Values": ["Amazon Simple Storage Service"]
                         }
-                    },  {
-                       "Dimensions": {
-                           "Key": "LINKED_ACCOUNT",
-                           "Values": accountIds
-                       }
-                   }]
+                    }, {
+                        "Dimensions": {
+                            "Key": "LINKED_ACCOUNT",
+                            "Values": accountIds
+                        }
+                    }]
             },
-            Metrics = ["UsageQuantity", "BlendedCost"],
-            GroupBy = [
+            Metrics=["UsageQuantity", "BlendedCost"],
+            GroupBy=[
                 {
                     'Type': 'DIMENSION',
                     'Key': "USAGE_TYPE"
@@ -499,7 +508,8 @@ class AWSReport(Report):
                 continue
 
             # Determine if the resource has a singular owner, is shared, or is un-owned
-            resourceOwner = resource.get_email() if resource.get_email() is not None else ("Shared" if resource.is_shared else "Unowned")
+            resourceOwner = resource.get_email() if resource.get_email() is not None else (
+                "Shared" if resource.is_shared else "Unowned")
             userCostSummary.setdefault(resourceOwner, {})
             userCostSummary[resourceOwner].setdefault(resource.get_resource_type(), 0)
             userCostSummary[resourceOwner][resource.get_resource_type()] += resource.get_monthly_cost()
@@ -531,21 +541,26 @@ class AWSReport(Report):
         # Get date variables. We will be making the report for the previous day.
         yesterday = datetime.date.today() - datetime.timedelta(1)
         firstDayOfMonth = yesterday.replace(day=1)
-        lastDayOfMonth = datetime.date(yesterday.year + (yesterday.month == 12), (yesterday.month + 1 if yesterday.month < 12 else 1), 1) - datetime.timedelta(1)
+        lastDayOfMonth = datetime.date(yesterday.year + (yesterday.month == 12),
+                                       (yesterday.month + 1 if yesterday.month < 12 else 1), 1) - datetime.timedelta(1)
 
         # Get a monthly and daily aggregation of costs. These reports are a nested dictionary in the form:
         # dictionary {account1: {service1: cost1, service2: cost2, ...}, account2: ...}
-        accountSummaryMonthly   = self.generateAccountSummary(self.accounts, firstDayOfMonth, lastDayOfMonth)
-        accountSummaryDaily     = self.generateAccountSummary(self.accounts, yesterday, yesterday + datetime.timedelta(1))
+        accountSummaryMonthly = self.generateAccountSummary(self.accounts, firstDayOfMonth, lastDayOfMonth)
+        accountSummaryDaily = self.generateAccountSummary(self.accounts, yesterday, yesterday + datetime.timedelta(1))
 
-        usageTypeSummaryMonthly = self.generateUsageTypeSummary(self.compliance["accounts"], firstDayOfMonth, lastDayOfMonth)
-        s3StorageSummaryMonthly = self.generateS3StorageSummary(self.compliance["accounts"], firstDayOfMonth, lastDayOfMonth)
+        usageTypeSummaryMonthly = self.generateUsageTypeSummary(self.compliance["accounts"], firstDayOfMonth,
+                                                                lastDayOfMonth)
+        s3StorageSummaryMonthly = self.generateS3StorageSummary(self.compliance["accounts"], firstDayOfMonth,
+                                                                lastDayOfMonth)
 
         # Generate a summary on individual resources. This requires downloading the billing CSV
-        resourceSummaryMonthlyUnsorted  = self.generateResourceSummary(self.compliance["accounts"])
-        resourceSummaryMonthly          = dict(sorted(resourceSummaryMonthlyUnsorted.items(), key=lambda x: x[1].monthly_cost, reverse=True)[:30])
-        userCostSummaryMonthly          = self.generateUserCostSummary(resourceSummaryMonthlyUnsorted, self.compliance["accounts"])
-        totalUserCostMonthly            = sum([user_costs['Total'] for (user, user_costs) in userCostSummaryMonthly.items()])
+        resourceSummaryMonthlyUnsorted = self.generateResourceSummary(self.compliance["accounts"])
+        resourceSummaryMonthly = dict(
+            sorted(resourceSummaryMonthlyUnsorted.items(), key=lambda x: x[1].monthly_cost, reverse=True)[:30])
+        userCostSummaryMonthly = self.generateUserCostSummary(resourceSummaryMonthlyUnsorted,
+                                                              self.compliance["accounts"])
+        totalUserCostMonthly = sum([user_costs['Total'] for (user, user_costs) in userCostSummaryMonthly.items()])
 
         # This will generate personalized compliance emails for everyone with a tagged resource
         self.generateComplianceSummary(yesterday)
@@ -555,17 +570,19 @@ class AWSReport(Report):
 
         # Create some simple aggregations, convert the strings sent over by AWS to floats
         totalsByAccountMonthly = {k: sum(accountSummaryMonthly[k].values()) for k in accountSummaryMonthly}
-        totalsByAccountDaily   = {k: sum(accountSummaryDaily[k].values()) for k in accountSummaryDaily}
+        totalsByAccountDaily = {k: sum(accountSummaryDaily[k].values()) for k in accountSummaryDaily}
         totalsByServiceMonthly = {k: sum(usageTypeSummaryMonthly[k].values()) for k in usageTypeSummaryMonthly}
 
         # Group accounts by managed and unmanaged
-        totalsByManagedAccountMonthly = {k: totalsByAccountMonthly[k] for k in totalsByAccountMonthly if k in managedAccounts}
+        totalsByManagedAccountMonthly = {k: totalsByAccountMonthly[k] for k in totalsByAccountMonthly if
+                                         k in managedAccounts}
         totalsByManagedAccountDaily = {k: totalsByAccountDaily[k] for k in totalsByAccountDaily if k in managedAccounts}
-        totalsByUnmanagedAccountMonthly = {k: totalsByAccountMonthly[k] for k in totalsByAccountMonthly if k not in managedAccounts}
-        totalsByUnmanagedAccountDaily = {k: totalsByAccountDaily[k] for k in totalsByAccountDaily if k not in managedAccounts}
+        totalsByUnmanagedAccountMonthly = {k: totalsByAccountMonthly[k] for k in totalsByAccountMonthly if
+                                           k not in managedAccounts}
+        totalsByUnmanagedAccountDaily = {k: totalsByAccountDaily[k] for k in totalsByAccountDaily if
+                                         k not in managedAccounts}
 
-
-    # Render the email using Jinja
+        # Render the email using Jinja
         return self.render_email(
             yesterday,
             self.email_recipients,
@@ -584,6 +601,7 @@ class AWSReport(Report):
             totalsByUnmanagedAccountMonthly=totalsByUnmanagedAccountMonthly,
             totalsByUnmanagedAccountDaily=totalsByUnmanagedAccountDaily
         )
+
 
 class GCPReport(Report):
 
