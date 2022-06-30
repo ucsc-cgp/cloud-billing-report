@@ -23,8 +23,9 @@ from typing import (
     Iterator,
     Mapping,
     Sequence,
-    Union, Dict,
+    Union,
 )
+import uuid
 
 import boto3
 from dateutil.relativedelta import (
@@ -35,12 +36,15 @@ from google.cloud import (
 )
 import jinja2
 
-from src.compliance_report import compliance_report
-from src.Boto3_STS_Service import Boto3_STS_Service
-
-import uuid
-from pathlib import Path
-from src.report_resource import report_resource
+from src.Boto3_STS_Service import (
+    Boto3_STS_Service,
+)
+from src.compliance_report import (
+    compliance_report,
+)
+from src.report_resource import (
+    report_resource,
+)
 
 
 class Report:
