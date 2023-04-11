@@ -734,14 +734,17 @@ def group_by(rows: Sequence[Mapping[str, int]],
         for k, vals in grouped
     )
 
+
 def has_key(value, key):
     try:
-        return value[key] is not None;
+        return value[key] is not None
     except KeyError:
-        return False;
+        return False
+
 
 def normalize_key(key):
     return key.lower() if isinstance(key, str) else key
+
 
 def sort_by(rows: Iterable, key, reverse=True) -> Iterable:
     """
@@ -762,6 +765,7 @@ def sort_by(rows: Iterable, key, reverse=True) -> Iterable:
     rows_without_keys = [row for row in rows if not has_key(row, key)]
     return sorted(rows_with_keys, key=lambda row: normalize_key(row[key]), reverse=reverse) + rows_without_keys;
 
+
 def to_id(value: str) -> str:
     """
     >>> to_id('abc123')
@@ -772,11 +776,14 @@ def to_id(value: str) -> str:
     """
     return re.sub('[^a-zA-Z0-9]', '-', value)
 
+
 def to_project_id(value: str) -> str:
     return 'project-' + to_id(value)
 
+
 def to_service_id(value: str) -> str:
     return 'service-' + to_id(value)
+
 
 report_types = {
     'aws': AWSReport,
