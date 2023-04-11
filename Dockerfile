@@ -1,5 +1,5 @@
 FROM python:3.8.6-slim
-LABEL maintainer="natanlao@users.noreply.github.com"
+LABEL maintainer="svonworl@users.noreply.github.com"
 LABEL org.opencontainers.image.source https://github.com/ucsc-cgp/cloud-billing-report
 
 COPY requirements.txt .

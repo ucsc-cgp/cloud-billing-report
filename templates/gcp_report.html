@@ -15,7 +15,7 @@
         <tbody>
         {% for project, cost_month, cost_today in rows|group_by('name', 'cost_month', 'cost_today') %}
             <tr>
-                <td><a href='#{{ project }}'>{{ project }}</a></td>
+                <td><a href='#{{ project|to_project_id }}'>{{ project }}</a></td>
                 <td>{{ cost_month|print_amount }}</td>
                 <td>{{ cost_today|print_diff }}</td>
             </tr>
@@ -30,9 +30,10 @@
         </tfoot>
     </table>
 
-    {% for project, month_total, today_total in rows|group_by('name', 'cost_month', 'cost_today') %}
-        <a name='{{ project }}' id='{{ project }}'></a>
-        <h2>Report for project {{ project }}</h2>
+    <h2>Details by project</h2>
+    {% for project, month_total, today_total in rows|group_by('name', 'cost_month', 'cost_today')|sort_by(1) %}
+        <a name='{{ project|to_project_id }}' id='{{ project|to_project_id }}'></a>
+        <h3>Report for project {{ project }}</h3>
         <table>
             <thead>
             <tr>
@@ -42,9 +43,9 @@
             </tr>
             </thead>
             <tbody>
-            {% for service, month_cost, today_cost in rows|filter_by(name=project)|group_by('description', 'cost_month', 'cost_today') %}
+            {% for service, month_cost, today_cost in rows|filter_by(name=project)|group_by('description', 'cost_month', 'cost_today')|sort_by(1) %}
                 <tr>
-                    <td>{{ service }}</td>
+                    <td><a href='#{{ service|to_service_id }}'>{{ service }}</a></td>
                     <td>{{ month_cost|print_amount }}</td>
                     <td>{{ today_cost|print_diff }}</td>
                 </tr>
@@ -59,4 +60,36 @@
             </tfoot>
         </table>
     {% endfor %}
+
+    <h2>Details by service</h2>
+    {% for service, month_total, today_total in rows|group_by('description', 'cost_month', 'cost_today')|sort_by(1) %}
+         <a name='{{ service|to_service_id }}' id='{{ service|to_service_id }}'></a>
+         <h3>Report for service {{ service }}</h3>
+         <table>
+             <thead>
+             <tr>
+                <th>Project</th>
+                <th>{{ report_date|ym }}</th>
+                <th>{{ report_date|ymd }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for project, month_cost, today_cost in rows|filter_by(description=service)|group_by('name', 'cost_month', 'cost_today')|sort_by(1) %}
+                <tr>
+                    <td><a href='#{{ project|to_project_id }}'>{{ project }}</a></td>
+                    <td>{{ month_cost|print_amount }}</td>
+                    <td>{{ today_cost|print_diff }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+            <tfoot>
+            <tr>
+                <td>Grand total</td>
+                <td>{{ month_total|print_amount }}</td>
+                <td>{{ today_total|print_diff }}</td>
+            </tr>
+            </tfoot>
+        </table>
+    {% endfor %}
+
 {% endblock main %}

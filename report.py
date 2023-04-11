@@ -18,8 +18,10 @@ import operator
 from pathlib import (
     Path,
 )
+import re
 import tempfile
 from typing import (
+    Iterable,
     Iterator,
     Mapping,
     Sequence,
@@ -67,7 +69,10 @@ class Report:
             'sum_key': lambda rows, key: sum(row[key] for row in rows),
             'group_by': group_by,
             'filter_by': filter_by,
-            'print_diff': lambda a: print_diff(a, self.warning_threshold)
+            'sort_by': sort_by,
+            'to_project_id': lambda value: 'project-' + to_id(value),
+            'to_service_id': lambda value: 'service-' + to_id(value),
+            'print_diff': lambda a: print_diff(a, self.warning_threshold),
         })
 
     @property
@@ -705,8 +710,8 @@ def group_by(rows: Sequence[Mapping[str, int]],
     SELECT key, SUM(target1), ..., SUM(targetn) FROM ... WHERE conditions GROUP BY key
     >>> my_rows = [
     ...     {'foo': 1, 'bar': 2, 'baz': 3},
+    ...     {'foo': 2, 'bar': 2, 'baz': 1},
     ...     {'foo': 1, 'bar': 3, 'baz': 2},
-    ...     {'foo': 2, 'bar': 2, 'baz': 1}
     ... ]
 
     >>> list(group_by(my_rows, 'foo', 'bar'))
@@ -717,15 +722,59 @@ def group_by(rows: Sequence[Mapping[str, int]],
 
     >>> list(group_by(my_rows, 'foo', 'bar', 'baz', baz=2))
     [(1, 3, 2)]
+
     """
+    sorted = sort_by(rows, key=key, reverse=False)
     grouped = (
         (k, list(v))
-        for k, v in itertools.groupby(filter_by(rows, **conditions), key=operator.itemgetter(key))
+        for k, v in itertools.groupby(filter_by(sorted, **conditions), key=operator.itemgetter(key))
     )
     return (
         (k, *(sum(val[target] for val in vals) for target in targets))
         for k, vals in grouped
     )
+
+
+def has_key(value, key):
+    try:
+        return value[key] is not None
+    except KeyError:
+        return False
+
+
+def normalize_key(key):
+    return key.lower() if isinstance(key, str) else key
+
+
+def sort_by(rows: Iterable, key, reverse=True) -> Iterable:
+    """
+    >>> my_rows = [
+    ...     {'bar': 1},
+    ...     {'foo': 3, 'bar': 0},
+    ...     {'foo': 1, 'bar': 3},
+    ...     {'foo': 2, 'bar': 2}
+    ... ]
+
+    >>> list(sort_by(my_rows, 'bar'))
+    [{'foo': 1, 'bar': 3}, {'foo': 2, 'bar': 2}, {'bar': 1}, {'foo': 3, 'bar': 0}]
+
+    >>> list(sort_by(my_rows, 'foo', reverse=False))
+    [{'foo': 1, 'bar': 3}, {'foo': 2, 'bar': 2}, {'foo': 3, 'bar': 0}, {'bar': 1}]
+    """
+    rows_with_keys = [row for row in rows if has_key(row, key)]
+    rows_without_keys = [row for row in rows if not has_key(row, key)]
+    return sorted(rows_with_keys, key=lambda row: normalize_key(row[key]), reverse=reverse) + rows_without_keys
+
+
+def to_id(value: str) -> str:
+    """
+    >>> to_id('abc123')
+    'abc123'
+
+    >>> to_id('.ABC 1-2-3!')
+    '-ABC-1-2-3-'
+    """
+    return re.sub('[^a-zA-Z0-9]', '-', value)
 
 
 report_types = {

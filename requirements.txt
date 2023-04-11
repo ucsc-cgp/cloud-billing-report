@@ -1,5 +1,5 @@
 boto3==1.17.51
-google-cloud-bigquery==2.2.0
+google-cloud-bigquery==3.4.0
 Jinja2==2.11.3
 python-dateutil==2.8.1
 markupsafe==2.0.1
