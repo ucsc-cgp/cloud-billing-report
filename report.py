@@ -20,6 +20,7 @@ from pathlib import (
 )
 import tempfile
 from typing import (
+    Iterable,
     Iterator,
     Mapping,
     Sequence,
@@ -67,6 +68,7 @@ class Report:
             'sum_key': lambda rows, key: sum(row[key] for row in rows),
             'group_by': group_by,
             'filter_by': filter_by,
+            'sort_by': sort_by,
             'print_diff': lambda a: print_diff(a, self.warning_threshold)
         })
 
@@ -727,6 +729,21 @@ def group_by(rows: Sequence[Mapping[str, int]],
         for k, vals in grouped
     )
 
+def sort_by(values: Iterable, key, missing=0, reverse=True) -> Iterable:
+    """
+    >>> my_rows = [
+    ...     {'foo': 3, 'bar': 1},
+    ...     {'foo': 1, 'bar': 3},
+    ...     {'foo': 2, 'bar': 2}
+    ... ]
+
+    >>> list(sort_by(my_rows, 'bar'))
+    [{'foo': 1, 'bar': 3}, {'foo': 2, 'bar': 2}, {'foo': 3, 'bar': 1}]
+
+    >>> list(sort_by(my_rows, 'foo', reverse=False))
+    [{'foo': 1, 'bar': 3}, {'foo': 2, 'bar': 2}, {'foo': 3, 'bar': 1}]
+    """
+    return sorted(values, key=lambda row: row[key] or missing, reverse=reverse)
 
 report_types = {
     'aws': AWSReport,

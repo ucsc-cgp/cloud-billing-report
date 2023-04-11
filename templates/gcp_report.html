@@ -30,7 +30,7 @@
         </tfoot>
     </table>
 
-    {% for project, month_total, today_total in rows|group_by('name', 'cost_month', 'cost_today') %}
+    {% for project, month_total, today_total in rows|group_by('name', 'cost_month', 'cost_today')|sort_by(1) %}
         <a name='{{ project }}' id='{{ project }}'></a>
         <h2>Report for project {{ project }}</h2>
         <table>
@@ -42,9 +42,9 @@
             </tr>
             </thead>
             <tbody>
-            {% for service, month_cost, today_cost in rows|filter_by(name=project)|group_by('description', 'cost_month', 'cost_today') %}
+            {% for service, month_cost, today_cost in rows|filter_by(name=project)|group_by('description', 'cost_month', 'cost_today')|sort_by(1) %}
                 <tr>
-                    <td>{{ service }}</td>
+                    <td><a href='#{{ service }}'>{{ service }}</a></td>
                     <td>{{ month_cost|print_amount }}</td>
                     <td>{{ today_cost|print_diff }}</td>
                 </tr>
@@ -59,4 +59,36 @@
             </tfoot>
         </table>
     {% endfor %}
+
+    {% for service, month_total, today_total in rows|sort_by('description', '')|group_by('description', 'cost_month', 'cost_today')|sort_by(1) %}
+         <a name='{{ service }}' id='{{ service }}'></a>
+         <h2>Report for service {{ service }}</h2>
+         <table>
+             <thead>
+             <tr>
+                <th>Project</th>
+                <th>{{ report_date|ym }}</th>
+                <th>{{ report_date|ymd }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for project, month_cost, today_cost in rows|filter_by(description=service)|sort_by('name', '')|group_by('name', 'cost_month', 'cost_today')|sort_by(1) %}
+                <tr>
+                    <td><a href='#{{ project }}'>{{ project }}</a></td>
+                    <td>{{ month_cost|print_amount }}</td>
+                    <td>{{ today_cost|print_diff }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+            <tfoot>
+            <tr>
+                <td>Grand total</td>
+                <td>{{ month_total|print_amount }}</td>
+                <td>{{ today_total|print_diff }}</td>
+            </tr>
+            </tfoot>
+        </table>
+
+    {% endfor %}
+
 {% endblock main %}
