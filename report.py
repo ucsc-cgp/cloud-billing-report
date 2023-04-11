@@ -18,6 +18,7 @@ import operator
 from pathlib import (
     Path,
 )
+import re
 import tempfile
 from typing import (
     Iterable,
@@ -69,6 +70,7 @@ class Report:
             'group_by': group_by,
             'filter_by': filter_by,
             'sort_by': sort_by,
+            'to_id': to_id,
             'print_diff': lambda a: print_diff(a, self.warning_threshold)
         })
 
@@ -720,7 +722,6 @@ def group_by(rows: Sequence[Mapping[str, int]],
     >>> list(group_by(my_rows, 'foo', 'bar', 'baz', baz=2))
     [(1, 3, 2)]
 
-    # TODO add to_id
     """
     sorted = sort_by(rows, key=key, reverse=False)
     grouped = (
@@ -759,6 +760,16 @@ def sort_by(rows: Iterable, key, reverse=True) -> Iterable:
     rows_with_keys = [row for row in rows if has_key(row, key)]
     rows_without_keys = [row for row in rows if not has_key(row, key)]
     return sorted(rows_with_keys, key=lambda row: normalize_key(row[key]), reverse=reverse) + rows_without_keys;
+
+def to_id(value: str) -> str:
+    """
+    >>> to_id('abc123')
+    'abc123'
+
+    >>> to_id('.ABC 1-2-3!')
+    '-ABC-1-2-3-'
+    """
+    return re.sub('[^a-zA-Z0-9]', '-', value)
 
 report_types = {
     'aws': AWSReport,
