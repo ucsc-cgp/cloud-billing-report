@@ -763,7 +763,7 @@ def sort_by(rows: Iterable, key, reverse=True) -> Iterable:
     """
     rows_with_keys = [row for row in rows if has_key(row, key)]
     rows_without_keys = [row for row in rows if not has_key(row, key)]
-    return sorted(rows_with_keys, key=lambda row: normalize_key(row[key]), reverse=reverse) + rows_without_keys;
+    return sorted(rows_with_keys, key=lambda row: normalize_key(row[key]), reverse=reverse) + rows_without_keys
 
 
 def to_id(value: str) -> str:
