@@ -70,8 +70,9 @@ class Report:
             'group_by': group_by,
             'filter_by': filter_by,
             'sort_by': sort_by,
-            'to_id': to_id,
-            'print_diff': lambda a: print_diff(a, self.warning_threshold)
+            'to_project_id': to_project_id,
+            'to_service_id': to_service_id,
+            'print_diff': lambda a: print_diff(a, self.warning_threshold),
         })
 
     @property
@@ -770,6 +771,12 @@ def to_id(value: str) -> str:
     '-ABC-1-2-3-'
     """
     return re.sub('[^a-zA-Z0-9]', '-', value)
+
+def to_project_id(value: str) -> str:
+    return 'project-' + to_id(value)
+
+def to_service_id(value: str) -> str:
+    return 'service-' + to_id(value)
 
 report_types = {
     'aws': AWSReport,
