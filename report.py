@@ -773,7 +773,12 @@ def to_id(value: str) -> str:
 
     >>> to_id('.ABC 1-2-3!')
     '-ABC-1-2-3-'
+
+    >>> to_id(None)
+    ''
     """
+    if value is None:
+        return ''
     return re.sub('[^a-zA-Z0-9]', '-', value)
 
 
