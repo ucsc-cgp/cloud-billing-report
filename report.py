@@ -180,16 +180,22 @@ class AWSReport(Report):
         manifest_path /= self.report_name
         manifest_path /= f'{this_month}-{next_month}'
         manifest_path /= f'{self.report_name}-Manifest.json'
+        # Get the list of S3 report object keys
         with tempfile.TemporaryFile() as tmp:
             s3.download_fileobj(self.bucket, manifest_path.as_posix(), tmp)
             # Reports that are sufficiently large can be split into multiple files
             # but we'll ignore that for now
             tmp.seek(0)
-            s3_report_archive_path = json.load(tmp)['reportKeys'][0]
-        with tempfile.NamedTemporaryFile() as tmp:
-            s3.download_fileobj(self.bucket, s3_report_archive_path, tmp)
-            with gzip.open(tmp.name, 'r') as report_fp:
-                return report_fp.read().decode().splitlines()
+            reportKeys = json.load(tmp)['reportKeys']
+        # Create a list of the lines from each of the report object files
+        allLines = []
+        for s3_report_archive_path in reportKeys:
+            with tempfile.NamedTemporaryFile() as tmp:
+                s3.download_fileobj(self.bucket, s3_report_archive_path, tmp)
+                with gzip.open(tmp.name, 'r') as report_fp:
+                    fileLines = report_fp.read().decode().splitlines()
+                    allLines.extend(fileLines)
+        return allLines
 
     def generate_compliance_list(self) -> list:
 
@@ -773,8 +779,14 @@ def to_id(value: str) -> str:
 
     >>> to_id('.ABC 1-2-3!')
     '-ABC-1-2-3-'
+
+    >>> to_id(None)
+    'None'
+
+    >>> to_id(123)
+    '123'
     """
-    return re.sub('[^a-zA-Z0-9]', '-', value)
+    return re.sub('[^a-zA-Z0-9]', '-', str(value))
 
 
 report_types = {
