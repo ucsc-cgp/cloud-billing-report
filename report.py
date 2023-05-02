@@ -637,7 +637,11 @@ class GCPReport(Report):
             ORDER BY LOWER(project.name) ASC, service.description ASC'''
         query_job = client.query(query)
         rows = list(query_job.result())
-        return self.render_email(self.date, self.email_recipients, rows=rows)
+        return self.render_email(self.date, self.email_recipients, rows=rows, cost_cutoff=self.cost_cutoff())
+
+    def cost_cutoff(self) -> float:
+        # cost cutoff is $1 on all days but friday, when it is zero
+        return 0.0 if self.date.weekday() == 4 else 1.0
 
 
 def print_amount(amount: Union[Decimal, float, int]) -> str:

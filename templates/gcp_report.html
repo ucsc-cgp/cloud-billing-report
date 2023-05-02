@@ -3,6 +3,10 @@
 {% block main %}
     Google Cloud Platform Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
 
+    {% if cost_cutoff > 0 %}
+    Abbreviated report: monthly costs less than {{ cost_cutoff|print_amount }} are not detailed.<br>
+    {% endif %}
+
     <h2>Totals by project</h2>
     <table>
         <thead>
@@ -14,11 +18,13 @@
         </thead>
         <tbody>
         {% for project, cost_month, cost_today in rows|group_by('name', 'cost_month', 'cost_today') %}
+          {%- if cost_month >= cost_cutoff -%}
             <tr>
                 <td><a href='#{{ project|to_project_id }}'>{{ project }}</a></td>
                 <td>{{ cost_month|print_amount }}</td>
                 <td>{{ cost_today|print_diff }}</td>
             </tr>
+          {%- endif -%}
         {% endfor %}
         </tbody>
         <tfoot>
@@ -32,6 +38,7 @@
 
     <h2>Details by project</h2>
     {% for project, month_total, today_total in rows|group_by('name', 'cost_month', 'cost_today')|sort_by(1) %}
+      {%- if month_total >= cost_cutoff -%}
         <a name='{{ project|to_project_id }}' id='{{ project|to_project_id }}'></a>
         <h3>Report for project {{ project }}</h3>
         <table>
@@ -44,11 +51,13 @@
             </thead>
             <tbody>
             {% for service, month_cost, today_cost in rows|filter_by(name=project)|group_by('description', 'cost_month', 'cost_today')|sort_by(1) %}
+              {%- if month_cost >= cost_cutoff -%}
                 <tr>
                     <td><a href='#{{ service|to_service_id }}'>{{ service }}</a></td>
                     <td>{{ month_cost|print_amount }}</td>
                     <td>{{ today_cost|print_diff }}</td>
                 </tr>
+              {%- endif -%}
             {% endfor %}
             </tbody>
             <tfoot>
@@ -59,10 +68,12 @@
             </tr>
             </tfoot>
         </table>
+      {%- endif -%}
     {% endfor %}
 
     <h2>Details by service</h2>
     {% for service, month_total, today_total in rows|group_by('description', 'cost_month', 'cost_today')|sort_by(1) %}
+      {%- if month_total >= cost_cutoff -%}
          <a name='{{ service|to_service_id }}' id='{{ service|to_service_id }}'></a>
          <h3>Report for service {{ service }}</h3>
          <table>
@@ -75,11 +86,13 @@
             </thead>
             <tbody>
             {% for project, month_cost, today_cost in rows|filter_by(description=service)|group_by('name', 'cost_month', 'cost_today')|sort_by(1) %}
+              {%- if month_cost >= cost_cutoff -%}
                 <tr>
                     <td><a href='#{{ project|to_project_id }}'>{{ project }}</a></td>
                     <td>{{ month_cost|print_amount }}</td>
                     <td>{{ today_cost|print_diff }}</td>
                 </tr>
+              {%- endif -%}
             {% endfor %}
             </tbody>
             <tfoot>
@@ -90,6 +103,7 @@
             </tr>
             </tfoot>
         </table>
+      {%- endif -%}
     {% endfor %}
 
 {% endblock main %}
