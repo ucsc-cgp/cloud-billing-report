@@ -4,7 +4,7 @@
     Google Cloud Platform Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
 
     {% if cost_cutoff > 0 %}
-    Abbreviated report: monthly costs less than {{ cost_cutoff|print_amount }} are not detailed.<br>
+    Abbreviated report: monthly costs less than {{ cost_cutoff|print_amount }} are not displayed.<br>
     {% endif %}
 
     <h2>Totals by project</h2>
