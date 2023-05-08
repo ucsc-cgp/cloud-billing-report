@@ -192,6 +192,7 @@ class AWSReport(Report):
         for s3_report_archive_path in reportKeys:
             with tempfile.NamedTemporaryFile() as tmp:
                 s3.download_fileobj(self.bucket, s3_report_archive_path, tmp)
+                tmp.flush()
                 with gzip.open(tmp.name, 'r') as report_fp:
                     fileLines = report_fp.read().decode().splitlines()
                     allLines.extend(fileLines)
