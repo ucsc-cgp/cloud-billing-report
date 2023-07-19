@@ -410,7 +410,7 @@ class AWSReport(Report):
         for row in reportCsv:
 
             # skip rows that involve us getting money back.
-            if row['lineItem/LineItemType'].lower() in ['credit', 'refund']:
+            if row['lineItem/LineItemType'].lower() in ['credit', 'refund', 'edpdiscount']:
                 continue
 
             account = self.accounts.get(row['lineItem/UsageAccountId'], '(unknown)')  # account for resource
