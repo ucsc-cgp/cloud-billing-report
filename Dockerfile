@@ -1,4 +1,4 @@
-FROM python:3.8.6-slim
+FROM python:3.11.5-slim
 LABEL maintainer="svonworl@users.noreply.github.com"
 LABEL org.opencontainers.image.source https://github.com/ucsc-cgp/cloud-billing-report
 

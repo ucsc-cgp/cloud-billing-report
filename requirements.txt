@@ -1,4 +1,4 @@
-boto3==1.17.51
+boto3==1.28.37
 google-cloud-bigquery==3.4.0
 Jinja2==2.11.3
 python-dateutil==2.8.1
