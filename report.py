@@ -622,12 +622,14 @@ class GCPReport(Report):
         self.terra_workspaces = self.readTerraWorkspaces(terra_workspaces_path)
 
     def readTerraWorkspaces(self, path: str) -> Mapping:
-        if path != None:
-            infos = json.loads(Path(path).read_text())
-            workspaces = [ info['workspace'] for info in infos ]
-            return { (workspace['namespace'] + '--' + workspace['name'])[:30]: workspace for workspace in workspaces }
-        else:
+        try:
+            if path != None:
+                infos = json.loads(Path(path).read_text())
+                workspaces = [ info['workspace'] for info in infos ]
+                return { (workspace['namespace'] + '--' + workspace['name'])[:30]: workspace for workspace in workspaces }
+        except OSError:
             return {}
+        return {}
 
     def generateBetterReport(self) -> str:
         client = bigquery.Client()

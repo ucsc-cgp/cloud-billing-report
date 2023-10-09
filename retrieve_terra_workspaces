@@ -1,0 +1,3 @@
+#!/bin/bash
+
+curl -k -X 'GET' 'https://api.firecloud.org/api/workspaces' -H 'accept: application/json' -H 'Authorization: Bearer '$(gcloud auth print-access-token)
