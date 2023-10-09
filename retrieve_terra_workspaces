@@ -1,4 +1,5 @@
 #!/bin/bash
 # This script prints a JSON blob that describes each of the Terra workspaces to which the currently-authenticated gcloud user has access.
+# Remove the workspace "attributes" property, which might contain confidential information if the workspace is not public.
 
-curl -X 'GET' 'https://api.firecloud.org/api/workspaces' -H 'accept: application/json' -H "Authorization: Bearer $(gcloud auth print-access-token)"
+curl -X 'GET' 'https://api.firecloud.org/api/workspaces' -H 'accept: application/json' -H "Authorization: Bearer $(gcloud auth print-access-token)" | jq 'del(.[].workspace.attributes)'
