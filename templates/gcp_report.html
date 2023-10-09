@@ -41,9 +41,9 @@
       {%- if month_total >= cost_cutoff -%}
         <a name='{{ project|to_project_id }}' id='{{ project|to_project_id }}'></a>
         <h3>Report for project {{ project }}</h3>
-        {%- if project in terra_workspaces -%}
-        Created by {{ terra_workspaces[project].createdBy }}
-        {%- endif -%}
+        {% if project in terra_workspaces %}
+          <p>Terra workspace created by {{ terra_workspaces[project]['createdBy'] }}<p>
+        {% endif %}
         <table>
             <thead>
             <tr>

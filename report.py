@@ -619,13 +619,15 @@ class GCPReport(Report):
 
     def __init__(self, config_path: str, date: datetime.date, terra_workspaces_path: str):
         super().__init__(platform='gcp', config_path=config_path, date=date)
-        self.terra_workspaces = self.readJson(terra_workspaces_path)
+        self.terra_workspaces = self.readTerraWorkspaces(terra_workspaces_path)
 
-    def readJson(self, path: str):
+    def readTerraWorkspaces(self, path: str) -> Mapping:
         if path != None:
-            return json.loads(Path(path).read_text())
+            infos = json.loads(Path(path).read_text())
+            workspaces = [ info['workspace'] for info in infos ]
+            return { (workspace['namespace'] + '--' + workspace['name'])[:30]: workspace for workspace in workspaces }
         else:
-            return []
+            return {}
 
     def generateBetterReport(self) -> str:
         client = bigquery.Client()
