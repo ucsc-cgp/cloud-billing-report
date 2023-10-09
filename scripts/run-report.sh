@@ -2,6 +2,7 @@
 set -eu
 
 CONFIG=/root/reporting/config.json
+TERRA_WORKSPACES=/root/reporting/terra-workspaces.json
 IMAGE=ghcr.io/ucsc-cgp/cloud-billing-report:latest
 REPORT_TYPE=$1
 FAIL_LOG=/root/reporting/fail.log
@@ -16,10 +17,11 @@ echo "Running container"
 (/usr/bin/docker pull ${IMAGE} > /dev/null 2>&1 && \
   /usr/bin/docker run \
   -v ${CONFIG}:/config.json:ro \
+  -v ${TERRA_WORKSPACES}:/terra-workspaces.json:ro \
   -v ~/.aws/credentials:/root/.aws/credentials:ro \
   -e AWS_PROFILE=${AWS_PROFILE} \
   -v ${PERSONALIZED_EMAIL_DIR}/:/tmp/personalizedEmails \
-  ${IMAGE} ${REPORT_TYPE} > ${EMAIL_TMP_FILE} && \
+  ${IMAGE} ${REPORT_TYPE} --terra-workspaces=/terra-workspaces.json > ${EMAIL_TMP_FILE} && \
   /usr/sbin/sendmail -t < ${EMAIL_TMP_FILE}) || echo "${REPORT_TYPE},$(date -d 'today - 1day' +%Y-%m-%d)" >> ${FAIL_LOG}
 
 sleep 5

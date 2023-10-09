@@ -166,7 +166,7 @@ class AWSReport(Report):
                           "Amazon Simple Storage Service": "AWS S3 Bucket",
                           "Amazon Elastic Block Store": "AWS EBS"}
 
-    def __init__(self, config_path: str, date: datetime.date):
+    def __init__(self, config_path: str, date: datetime.date, terra_workspaces_path: str):
         super().__init__(platform='aws', config_path=config_path, date=date)
 
     def usage_csv(self) -> Iterator[str]:
@@ -617,8 +617,21 @@ class AWSReport(Report):
 
 class GCPReport(Report):
 
-    def __init__(self, config_path: str, date: datetime.date):
+    def __init__(self, config_path: str, date: datetime.date, terra_workspaces_path: str):
         super().__init__(platform='gcp', config_path=config_path, date=date)
+        self.terra_workspaces = self.readTerraWorkspaces(terra_workspaces_path)
+
+    def readTerraWorkspaces(self, path: str) -> Mapping:
+        try:
+            if path is not None:
+                infos = json.loads(Path(path).read_text())
+                if not isinstance(infos, list):
+                    return {}
+                workspaces = [info['workspace'] for info in infos]
+                return {(workspace['namespace'] + '--' + workspace['name'])[:30]: workspace for workspace in workspaces}
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return {}
 
     def generateBetterReport(self) -> str:
         client = bigquery.Client()
@@ -638,7 +651,7 @@ class GCPReport(Report):
             ORDER BY LOWER(project.name) ASC, service.description ASC'''
         query_job = client.query(query)
         rows = list(query_job.result())
-        return self.render_email(self.date, self.email_recipients, rows=rows, cost_cutoff=self.cost_cutoff())
+        return self.render_email(self.date, self.email_recipients, rows=rows, cost_cutoff=self.cost_cutoff(), terra_workspaces=self.terra_workspaces)
 
     def cost_cutoff(self) -> float:
         # cost cutoff is $1 on all days but friday, when it effectively does not exist
@@ -815,11 +828,14 @@ if __name__ == '__main__':
     parser.add_argument('--config',
                         default=Path.cwd() / 'config.json',
                         help='Path to config.json. Default to current directory.')
+    parser.add_argument('--terra-workspaces',
+                        default=None,
+                        help='Path to json file containing Terra workspace information.')
     arguments = parser.parse_args()
 
     if arguments.report_type == "gcp":
         arguments.report_date = (datetime.datetime.now() - datetime.timedelta(days=2)).strftime(date_format)
 
     date = datetime.datetime.strptime(arguments.report_date, date_format).date()
-    report = report_types[arguments.report_type](arguments.config, date)
+    report = report_types[arguments.report_type](arguments.config, date, arguments.terra_workspaces)
     print(report.generateBetterReport())
