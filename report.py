@@ -623,11 +623,13 @@ class GCPReport(Report):
 
     def readTerraWorkspaces(self, path: str) -> Mapping:
         try:
-            if path != None:
+            if path is not None:
                 infos = json.loads(Path(path).read_text())
-                workspaces = [ info['workspace'] for info in infos ]
-                return { (workspace['namespace'] + '--' + workspace['name'])[:30]: workspace for workspace in workspaces }
-        except OSError:
+                if not isinstance(infos, list):
+                    return {}
+                workspaces = [info['workspace'] for info in infos]
+                return {(workspace['namespace'] + '--' + workspace['name'])[:30]: workspace for workspace in workspaces}
+        except (OSError, json.JSONDecodeError):
             return {}
         return {}
 
@@ -649,7 +651,7 @@ class GCPReport(Report):
             ORDER BY LOWER(project.name) ASC, service.description ASC'''
         query_job = client.query(query)
         rows = list(query_job.result())
-        return self.render_email(self.date, self.email_recipients, rows=rows, cost_cutoff=self.cost_cutoff(), terra_workspaces = self.terra_workspaces)
+        return self.render_email(self.date, self.email_recipients, rows=rows, cost_cutoff=self.cost_cutoff(), terra_workspaces=self.terra_workspaces)
 
     def cost_cutoff(self) -> float:
         # cost cutoff is $1 on all days but friday, when it effectively does not exist
