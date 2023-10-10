@@ -628,7 +628,7 @@ class GCPReport(Report):
                 if not isinstance(infos, list):
                     return {}
                 workspaces = [info['workspace'] for info in infos]
-                return {(workspace['namespace'] + '--' + workspace['name'])[:30]: workspace for workspace in workspaces}
+                return {to_id((workspace['namespace'] + '--' + workspace['name'])[:30]): workspace for workspace in workspaces}
         except (OSError, json.JSONDecodeError):
             return {}
         return {}
