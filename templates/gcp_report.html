@@ -11,16 +11,16 @@
     <table>
         <thead>
         <tr>
-            <th>Project</th>
+            <th>Project Name</th>
             <th>{{ report_date|ym }}</th>
             <th>{{ report_date|ymd }}</th>
         </tr>
         </thead>
         <tbody>
-        {% for project, cost_month, cost_today in rows|group_by('name', 'cost_month', 'cost_today') %}
+        {% for id, cost_month, cost_today, project in rows|group_by('id', 'cost_month', 'cost_today', 'name')|sort_by(3, reverse=False) %}
           {%- if cost_month >= cost_cutoff -%}
             <tr>
-                <td><a href='#{{ project|to_project_id }}'>{{ project }}</a></td>
+                <td><a href='#{{ id|to_project_id }}'>{{ project }}</a></td>
                 <td>{{ cost_month|print_amount }}</td>
                 <td>{{ cost_today|print_diff }}</td>
             </tr>
@@ -37,13 +37,15 @@
     </table>
 
     <h2>Details by project</h2>
-    {% for project, month_total, today_total in rows|group_by('name', 'cost_month', 'cost_today')|sort_by(1) %}
+    {% for id, month_total, today_total, project in rows|group_by('id', 'cost_month', 'cost_today', 'name')|sort_by(1) %}
       {%- if month_total >= cost_cutoff -%}
-        <a name='{{ project|to_project_id }}' id='{{ project|to_project_id }}'></a>
+        <a name='{{ id|to_project_id }}' id='{{ id|to_project_id }}'></a>
         <h3>Report for project {{ project }}</h3>
-        {% if project in terra_workspaces and 'createdBy' in terra_workspaces[project] %}
-          <p>Terra workspace created by {{ terra_workspaces[project]['createdBy'] }}</p>
+        <p>GCP project ID: <a href="https://console.cloud.google.com/welcome?project={{ id }}">{{ id }}</a>
+        {% if id in terra_workspaces and 'createdBy' in terra_workspaces[id] %}
+          <br>Terra workspace created by {{ terra_workspaces[id]['createdBy'] }}
         {% endif %}
+        </p>
         <table>
             <thead>
             <tr>
@@ -53,7 +55,7 @@
             </tr>
             </thead>
             <tbody>
-            {% for service, month_cost, today_cost in rows|filter_by(name=project)|group_by('description', 'cost_month', 'cost_today')|sort_by(1) %}
+            {% for service, month_cost, today_cost in rows|filter_by(id=id)|group_by('description', 'cost_month', 'cost_today')|sort_by(1) %}
               {%- if month_cost >= cost_cutoff -%}
                 <tr>
                     <td><a href='#{{ service|to_service_id }}'>{{ service }}</a></td>
@@ -82,16 +84,16 @@
          <table>
              <thead>
              <tr>
-                <th>Project</th>
+                <th>Project Name</th>
                 <th>{{ report_date|ym }}</th>
                 <th>{{ report_date|ymd }}</th>
             </tr>
             </thead>
             <tbody>
-            {% for project, month_cost, today_cost in rows|filter_by(description=service)|group_by('name', 'cost_month', 'cost_today')|sort_by(1) %}
+            {% for id, month_cost, today_cost, project in rows|filter_by(description=service)|group_by('id', 'cost_month', 'cost_today', 'name')|sort_by(1) %}
               {%- if month_cost >= cost_cutoff -%}
                 <tr>
-                    <td><a href='#{{ project|to_project_id }}'>{{ project }}</a></td>
+                    <td><a href='#{{ id|to_project_id }}'>{{ project }}</a></td>
                     <td>{{ month_cost|print_amount }}</td>
                     <td>{{ today_cost|print_diff }}</td>
                 </tr>

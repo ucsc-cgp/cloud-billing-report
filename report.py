@@ -14,6 +14,7 @@ from email.message import (
 import gzip
 import itertools
 import json
+import numbers
 import operator
 from pathlib import (
     Path,
@@ -628,7 +629,7 @@ class GCPReport(Report):
                 if not isinstance(infos, list):
                     return {}
                 workspaces = [info['workspace'] for info in infos]
-                return {to_id((workspace['namespace'] + '--' + workspace['name'])[:30]): workspace for workspace in workspaces}
+                return {workspace['googleProject']: workspace for workspace in workspaces}
         except (OSError, json.JSONDecodeError):
             return {}
         return {}
@@ -643,12 +644,13 @@ class GCPReport(Report):
               project.name,
               service.description,
               SUM(CASE WHEN DATE(usage_start_time) <= '{query_today}' THEN cost + IFNULL(creds.amount, 0) ELSE 0 END) AS cost_month,
-              SUM(CASE WHEN DATE(usage_start_time)  = '{query_today}' THEN cost + IFNULL(creds.amount, 0) ELSE 0 END) AS cost_today
+              SUM(CASE WHEN DATE(usage_start_time)  = '{query_today}' THEN cost + IFNULL(creds.amount, 0) ELSE 0 END) AS cost_today,
+              project.id
             FROM `{self.bigquery_table}`
             LEFT JOIN UNNEST(credits) AS creds
             WHERE invoice.month = '{query_month}'
-            GROUP BY project.name, service.description
-            ORDER BY LOWER(project.name) ASC, service.description ASC'''
+            GROUP BY project.name, service.description, project.id
+            ORDER BY LOWER(project.name) ASC, service.description ASC, LOWER(project.id) ASC'''
         query_job = client.query(query)
         rows = list(query_job.result())
         return self.render_email(self.date, self.email_recipients, rows=rows, cost_cutoff=self.cost_cutoff(), terra_workspaces=self.terra_workspaces)
@@ -754,9 +756,16 @@ def group_by(rows: Sequence[Mapping[str, int]],
         for k, v in itertools.groupby(filter_by(sorted, **conditions), key=operator.itemgetter(key))
     )
     return (
-        (k, *(sum(val[target] for val in vals) for target in targets))
+        (k, *(reduce(list(val[target] for val in vals)) for target in targets))
         for k, vals in grouped
     )
+
+
+def reduce(values: Sequence):
+    if isinstance(values[0], numbers.Number):
+        return sum(values)
+    else:
+        return values[0]
 
 
 def has_key(value, key):
