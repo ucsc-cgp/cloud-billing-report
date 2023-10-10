@@ -11,7 +11,7 @@
     <table>
         <thead>
         <tr>
-            <th>Project</th>
+            <th>Project Name</th>
             <th>{{ report_date|ym }}</th>
             <th>{{ report_date|ymd }}</th>
         </tr>
@@ -41,9 +41,11 @@
       {%- if month_total >= cost_cutoff -%}
         <a name='{{ id|to_project_id }}' id='{{ id|to_project_id }}'></a>
         <h3>Report for project {{ project }}</h3>
+        <p>GCP project ID: <a href="https://console.cloud.google.com/welcome?project={{ id }}">{{ id }}</a>
         {% if id in terra_workspaces and 'createdBy' in terra_workspaces[id] %}
-          <p>Terra workspace created by {{ terra_workspaces[id]['createdBy'] }}, GCP ID {{ id }}</p>
+          <br>Terra workspace created by {{ terra_workspaces[id]['createdBy'] }}
         {% endif %}
+        </p>
         <table>
             <thead>
             <tr>
@@ -82,7 +84,7 @@
          <table>
              <thead>
              <tr>
-                <th>Project</th>
+                <th>Project Name</th>
                 <th>{{ report_date|ym }}</th>
                 <th>{{ report_date|ymd }}</th>
             </tr>
