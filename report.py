@@ -130,6 +130,11 @@ class Report:
         assert self.platform == 'gcp'
         return self._config['bigquery_table']
 
+    @property
+    def terra_workspaces_path(self) -> str:
+        assert self.platform == 'gcp'
+        return self._config.get('terra_workspaces_path')
+
     def render_email(self,
                      report_date: datetime.date,
                      recipients: Union[str, Sequence[str]],
@@ -167,7 +172,7 @@ class AWSReport(Report):
                           "Amazon Simple Storage Service": "AWS S3 Bucket",
                           "Amazon Elastic Block Store": "AWS EBS"}
 
-    def __init__(self, config_path: str, date: datetime.date, terra_workspaces_path: str):
+    def __init__(self, config_path: str, date: datetime.date):
         super().__init__(platform='aws', config_path=config_path, date=date)
 
     def usage_csv(self) -> Iterator[str]:
@@ -618,9 +623,8 @@ class AWSReport(Report):
 
 class GCPReport(Report):
 
-    def __init__(self, config_path: str, date: datetime.date, terra_workspaces_path: str):
+    def __init__(self, config_path: str, date: datetime.date):
         super().__init__(platform='gcp', config_path=config_path, date=date)
-        self.terra_workspaces = self.readTerraWorkspaces(terra_workspaces_path)
 
     def readTerraWorkspaces(self, path: str) -> Mapping:
         try:
@@ -635,6 +639,7 @@ class GCPReport(Report):
         return {}
 
     def generateBetterReport(self) -> str:
+        terra_workspaces = self.readTerraWorkspaces(self.terra_workspaces_path)
         client = bigquery.Client()
         query_month = self.date.strftime('%Y%m')
         query_today = self.date.strftime('%Y-%m-%d')
@@ -653,7 +658,7 @@ class GCPReport(Report):
             ORDER BY LOWER(project.name) ASC, service.description ASC, LOWER(project.id) ASC'''
         query_job = client.query(query)
         rows = list(query_job.result())
-        return self.render_email(self.date, self.email_recipients, rows=rows, cost_cutoff=self.cost_cutoff(), terra_workspaces=self.terra_workspaces)
+        return self.render_email(self.date, self.email_recipients, rows=rows, cost_cutoff=self.cost_cutoff(), terra_workspaces=terra_workspaces)
 
     def cost_cutoff(self) -> float:
         # cost cutoff is $1 on all days but friday, when it effectively does not exist
@@ -846,5 +851,5 @@ if __name__ == '__main__':
         arguments.report_date = (datetime.datetime.now() - datetime.timedelta(days=2)).strftime(date_format)
 
     date = datetime.datetime.strptime(arguments.report_date, date_format).date()
-    report = report_types[arguments.report_type](arguments.config, date, arguments.terra_workspaces)
+    report = report_types[arguments.report_type](arguments.config, date)
     print(report.generateBetterReport())
