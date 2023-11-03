@@ -36,6 +36,32 @@
         </tfoot>
     </table>
 
+    <h2>User cost accounting</h2>
+    <table>
+    <tr><th>Owner</th><th>Service</th><th>Cost</th></tr>
+    {% for created_by, month_total, today_total in rows|group_by('created_by', 'cost_month', 'cost_today')|sort_by(1) %}
+      {%- if month_total >= cost_cutoff -%}
+        <tr>
+          <td>{{ created_by }}</td>
+        </tr>
+        {% for service, month_cost, today_cost in rows|filter_by(created_by=created_by)|group_by('description', 'cost_month', 'cost_today')|sort_by(1) %}
+          {%- if month_cost >= cost_cutoff -%}
+        <tr>
+          <td></td>
+          <td>{{ service }}</td>
+          <td>{{ month_cost|print_amount }}</td>
+        </tr>
+          {%- endif -%}
+        {% endfor %}
+        <tr>
+          <td></td>
+          <td>Total</td>
+          <td>{{ month_total|print_amount }}</td>
+        </tr>
+      {%- endif -%}
+    {% endfor %}
+    </table>
+
     <h2>Details by project</h2>
     {% for id, month_total, today_total, project in rows|group_by('id', 'cost_month', 'cost_today', 'name')|sort_by(1) %}
       {%- if month_total >= cost_cutoff -%}
