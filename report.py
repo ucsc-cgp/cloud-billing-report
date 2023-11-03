@@ -663,7 +663,7 @@ class GCPReport(Report):
             ORDER BY LOWER(project.name) ASC, service.description ASC, LOWER(project.id) ASC'''
         query_job = client.query(query)
         rows = list(query_job.result())
-        rows = [ dict(row) for row in rows ]
+        rows = [dict(row) for row in rows]
         self.addCreatedByToRows(rows, terra_workspaces)
         return self.render_email(self.date, self.email_recipients, rows=rows, cost_cutoff=self.cost_cutoff(), terra_workspaces=terra_workspaces)
 
