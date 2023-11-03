@@ -638,6 +638,11 @@ class GCPReport(Report):
             return {}
         return {}
 
+    def addCreatedByToRows(self, rows: Sequence[Mapping], terra_workspaces: Mapping):
+        for row in rows:
+            id = row['id']
+            row['created_by'] = terra_workspaces[id]['createdBy'] if id in terra_workspaces and 'createdBy' in terra_workspaces[id] else 'Unowned'
+
     def generateBetterReport(self) -> str:
         terra_workspaces = self.readTerraWorkspaces(self.terra_workspaces_path)
         client = bigquery.Client()
@@ -658,6 +663,8 @@ class GCPReport(Report):
             ORDER BY LOWER(project.name) ASC, service.description ASC, LOWER(project.id) ASC'''
         query_job = client.query(query)
         rows = list(query_job.result())
+        rows = [ dict(row) for row in rows ]
+        self.addCreatedByToRows(rows, terra_workspaces)
         return self.render_email(self.date, self.email_recipients, rows=rows, cost_cutoff=self.cost_cutoff(), terra_workspaces=terra_workspaces)
 
     def cost_cutoff(self) -> float:
