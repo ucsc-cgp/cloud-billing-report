@@ -416,7 +416,7 @@ class AWSReport(Report):
         for row in reportCsv:
 
             # skip rows that don't involve a cost, typicall those that refer to a discount, credit, or refund
-            itemType = row['lineItem/LineItemType'];
+            itemType = row['lineItem/LineItemType']
             if not (itemType.endswith('Usage') or itemType.endswith('Fee') or itemType.endswith('Tax')):
                 continue
 
