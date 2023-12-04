@@ -778,7 +778,7 @@ def reduce(values: Sequence):
     if isinstance(values[0], numbers.Number):
         return sum(values)
     else:
-        return values[0]
+        return next((v for v in values if v is not None), None)
 
 
 def has_key(value, key):
