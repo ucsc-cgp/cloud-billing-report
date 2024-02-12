@@ -16,7 +16,7 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
             </tr>
             </thead>
             <tbody>
-            {% for account_id, billedAmount in totalsByManagedAccountMonthly.items()|sort %}
+            {% for account_id, billedAmount in totalsByManagedAccountMonthly.items()|sort(attribute='1', reverse=True) %}
                 <tr>
                     <td><a href='#{{ account_id }}'>{{ account_id }}</a></td>
                     <td>{{ billedAmount|print_amount }}</td>
@@ -46,7 +46,7 @@ Amazon Web Services Report for {{ report_date.strftime('%A, %d %B %Y') }}<br>
             </tr>
             </thead>
             <tbody>
-            {% for account_id, billedAmount in totalsByUnmanagedAccountMonthly.items()|sort %}
+            {% for account_id, billedAmount in totalsByUnmanagedAccountMonthly.items()|sort(attribute='1', reverse=True) %}
                 <tr>
                     <td><a href='#{{ account_id }}'>{{ account_id }}</a></td>
                     <td>{{ billedAmount|print_amount }}</td>
