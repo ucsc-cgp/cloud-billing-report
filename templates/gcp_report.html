@@ -17,7 +17,7 @@
         </tr>
         </thead>
         <tbody>
-        {% for id, cost_month, cost_today, project in rows|group_by('id', 'cost_month', 'cost_today', 'name')|sort_by(3, reverse=False) %}
+        {% for id, cost_month, cost_today, project in rows|group_by('id', 'cost_month', 'cost_today', 'name')|sort_by(1) %}
           {%- if cost_month >= cost_cutoff -%}
             <tr>
                 <td><a href='#{{ id|to_project_id }}'>{{ project }}</a></td>
