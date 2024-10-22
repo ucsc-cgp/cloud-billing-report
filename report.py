@@ -12,6 +12,7 @@ from email.message import (
     EmailMessage,
 )
 import gzip
+import io
 import itertools
 import json
 import numbers
@@ -20,6 +21,7 @@ from pathlib import (
     Path,
 )
 import re
+import sys
 import tempfile
 from typing import (
     Iterable,
@@ -164,6 +166,36 @@ class Report:
         body = template.render(report_date=report_date, resource_list=resources)
         msg.set_content(body, subtype='html')
         return msg.as_string()
+
+    def firstDayOfMonth(self, date: datetime.date) -> datetime.date:
+        return date.replace(day=1)
+
+    def lastDayOfMonth(self, date: datetime.date) -> datetime.date:
+        return datetime.date(date.year + (date.month == 12),
+            (date.month + 1 if date.month < 12 else 1), 1) - datetime.timedelta(1)
+
+    def daysOfMonthUpToAndIncluding(self, date: datetime.date) -> Sequence[datetime.date]:
+        firstDayOfMonth = self.firstDayOfMonth(date)
+        return [firstDayOfMonth + datetime.timedelta(days=offset) for offset in range((date - firstDayOfMonth).days + 1)]
+
+    def saveFile(self, fileName: str, content: str) -> None:
+        print("OBJECT-NAME: ", fileName)
+        sys.stdout.write(content);
+        # TODO write to bucket
+
+    def generateFileName(self, prefix: str, extension: str, date: datetime.date) -> str:
+        return f'{self.platform}/{date.year}/{date.month}/{prefix}-{self.platform}-{date.year}-{date.month}.{extension}'
+
+    def generateBillingCsvFileName(self, date: datetime.date) -> str:
+        return self.generateFileName('cost-', 'csv', date)
+
+    def toCsv(self, rows: Sequence[Mapping[str, str]]) -> str:
+        with io.StringIO('') as file:
+            csvWriter = csv.DictWriter(file, fieldnames=rows[0].keys())
+            csvWriter.writeheader()
+            for row in rows:
+                csvWriter.writerow(row)
+            return file.getvalue()
 
 
 class AWSReport(Report):
@@ -556,12 +588,21 @@ class AWSReport(Report):
 
         return userCostSummary
 
+    def saveUsageData(self, date):
+        rows = []
+        for day in self.daysOfMonthUpToAndIncluding(date):
+            result = self.generateAccountSummary(self.accounts, day, day + datetime.timedelta(1))
+            rows += [{"date": day, "amount-billed": sum(result[account].values()), "linked-account": account} for account in result.keys()]
+        self.saveFile(self.generateBillingCsvFileName(date), self.toCsv(rows))
+
     def generateBetterReport(self) -> str:
         # Get date variables. We will be making the report for the previous day.
         yesterday = datetime.date.today() - datetime.timedelta(1)
-        firstDayOfMonth = yesterday.replace(day=1)
-        lastDayOfMonth = datetime.date(yesterday.year + (yesterday.month == 12),
-                                       (yesterday.month + 1 if yesterday.month < 12 else 1), 1) - datetime.timedelta(1)
+        firstDayOfMonth = self.firstDayOfMonth(yesterday)
+        lastDayOfMonth = self.lastDayOfMonth(yesterday)
+
+        # Save usage data
+        self.saveUsageData(yesterday)
 
         # Get a monthly and daily aggregation of costs. These reports are a nested dictionary in the form:
         # dictionary {account1: {service1: cost1, service2: cost2, ...}, account2: ...}
@@ -644,11 +685,21 @@ class GCPReport(Report):
             id = row['id']
             row['created_by'] = terra_workspaces[id]['createdBy'] if id in terra_workspaces and 'createdBy' in terra_workspaces[id] else 'Unowned'
 
-    def generateBetterReport(self) -> str:
+    def saveUsageData(self, date: datetime.date):
+        rows = []
+        for day in self.daysOfMonthUpToAndIncluding(date):
+            results = group_by(self.doQuery(day), 'id', 'name', 'cost_today')
+            rows += [
+                {"date": day, "amount-billed": cost, "project-id": id, "project-name": name}
+                for (id, name, cost) in results if cost > 0
+            ]
+        self.saveFile(self.generateBillingCsvFileName(date), self.toCsv(rows))
+
+    def doQuery(self, date: datetime.date):
         terra_workspaces = self.readTerraWorkspaces(self.terra_workspaces_path)
         client = bigquery.Client()
-        query_month = self.date.strftime('%Y%m')
-        query_today = self.date.strftime('%Y-%m-%d')
+        query_month = date.strftime('%Y%m')
+        query_today = date.strftime('%Y-%m-%d')
 
         # noinspection SqlNoDataSourceInspection
         query = f'''SELECT
@@ -666,7 +717,11 @@ class GCPReport(Report):
         rows = list(query_job.result())
         rows = [dict(row) for row in rows]
         self.addCreatedByToRows(rows, terra_workspaces)
-        return self.render_email(self.date, self.email_recipients, rows=rows, cost_cutoff=self.cost_cutoff(), terra_workspaces=terra_workspaces)
+        return rows
+
+    def generateBetterReport(self) -> str:
+        self.saveUsageData(self.date)
+        return self.render_email(self.date, self.email_recipients, rows=self.doQuery(self.date), cost_cutoff=self.cost_cutoff())
 
     def cost_cutoff(self) -> float:
         # cost cutoff is $1 on all days but friday, when it effectively does not exist
