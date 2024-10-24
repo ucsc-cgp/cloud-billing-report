@@ -60,7 +60,8 @@ class Report:
         self.date = date
 
         with open(config_path, 'r') as config_json:
-            self._config = json.load(config_json)[platform]
+            self._config_global = json.load(config_json)
+            self._config_platform = self._config_global[platform]
 
         self.jinja_env = jinja2.Environment(loader=jinja2.FileSystemLoader('templates/'))
         self.jinja_env.filters.update({
@@ -80,62 +81,78 @@ class Report:
 
     @property
     def bucket(self) -> str:
-        return self._config['bucket']
+        return self._config_platform['bucket']
 
     @property
     def warning_threshold(self) -> int:
         try:
-            return self._config['warning_threshold']
+            return self._config_platform['warning_threshold']
         except KeyError:
             return 200
 
     @property
     def email_from(self) -> str:
-        return self._config['from']
+        return self._config_platform['from']
 
     @property
     def email_recipients(self) -> Sequence:
-        return self._config['recipients']
+        return self._config_platform['recipients']
 
     @property
     def access_key(self) -> str:
         assert self.platform == 'aws'
-        return self._config['access_key']
+        return self._config_platform['access_key']
 
     @property
     def secret_key(self) -> str:
         assert self.platform == 'aws'
-        return self._config['secret_key']
+        return self._config_platform['secret_key']
 
     @property
     def report_prefix(self) -> str:
         assert self.platform == 'aws'
-        return self._config['prefix']
+        return self._config_platform['prefix']
 
     @property
     def report_name(self) -> str:
         assert self.platform == 'aws'
-        return self._config['report_name']
+        return self._config_platform['report_name']
 
     @property
     def accounts(self) -> Mapping:
         assert self.platform == 'aws'
-        return self._config['accounts']
+        return self._config_platform['accounts']
 
     @property
     def compliance(self) -> Mapping:
         assert self.platform == 'aws'
-        return self._config['compliance']
+        return self._config_platform['compliance']
 
     @property
     def bigquery_table(self) -> str:
         assert self.platform == 'gcp'
-        return self._config['bigquery_table']
+        return self._config_platform['bigquery_table']
 
     @property
     def terra_workspaces_path(self) -> str:
         assert self.platform == 'gcp'
-        return self._config.get('terra_workspaces_path')
+        return self._config_platform.get('terra_workspaces_path')
+
+    @property
+    def persist_access_key(self) -> str:
+        return self._config_global['persist']['access_key']
+
+    @property
+    def persist_secret_key(self) -> str:
+        return self._config_global['persist']['secret_key']
+
+    @property
+    def persist_bucket(self) -> str:
+        return self._config_global['persist']['bucket']
+
+    @property
+    def has_persist_config(self) -> str:
+        return self._config_global['persist'] != None
 
     def render_email(self,
                      report_date: datetime.date,
@@ -175,19 +192,26 @@ class Report:
             (date.month + 1 if date.month < 12 else 1), 1) - datetime.timedelta(1)
 
     def daysOfMonthUpToAndIncluding(self, date: datetime.date) -> Sequence[datetime.date]:
-        firstDayOfMonth = self.firstDayOfMonth(date)
-        return [firstDayOfMonth + datetime.timedelta(days=offset) for offset in range((date - firstDayOfMonth).days + 1)]
+        return [datetime.date(2024, 10, 19)]
+        # firstDayOfMonth = self.firstDayOfMonth(date)
+        # return [firstDayOfMonth + datetime.timedelta(days=offset) for offset in range((date - firstDayOfMonth).days + 1)]
 
     def saveFile(self, fileName: str, content: str) -> None:
-        print("OBJECT-NAME: ", fileName)
-        sys.stdout.write(content);
-        # TODO write to bucket
+        utf8 = bytes(content, 'UTF-8')
+        s3 = boto3.client('s3', aws_access_key_id=self.persist_access_key, aws_secret_access_key=self.persist_secret_key) 
+        s3.put_object(Bucket=self.persist_bucket, Key=fileName, Body=utf8)
+        s3.close()
 
-    def generateFileName(self, prefix: str, extension: str, date: datetime.date) -> str:
-        return f'{self.platform}/{date.year}/{date.month}/{prefix}-{self.platform}-{date.year}-{date.month}.{extension}'
+    def generateFileName(self, root: str, dateComponents: Iterable[str], base: str, extension: str) -> str:
+        slashDate = '/'.join(dateComponents)
+        dashDate = '-'.join(dateComponents)
+        return f'{root}/{slashDate}/{base}-{dashDate}.{extension}'
 
     def generateBillingCsvFileName(self, date: datetime.date) -> str:
-        return self.generateFileName('cost-', 'csv', date)
+        return self.generateFileName(self.platform, (str(date.year), str(date.month)), self.platform, 'csv')
+
+    def generateTerraCsvFileName(self, date: datetime.date) -> str:
+        return self.generateFileName('terra', (str(date.year), str(date.month), str(date.day)), 'terra', 'csv');
 
     def toCsv(self, rows: Sequence[Mapping[str, str]]) -> str:
         with io.StringIO('') as file:
@@ -602,7 +626,8 @@ class AWSReport(Report):
         lastDayOfMonth = self.lastDayOfMonth(yesterday)
 
         # Save usage data
-        self.saveUsageData(yesterday)
+        if self.has_persist_config:
+            self.saveUsageData(yesterday)
 
         # Get a monthly and daily aggregation of costs. These reports are a nested dictionary in the form:
         # dictionary {account1: {service1: cost1, service2: cost2, ...}, account2: ...}
@@ -694,6 +719,7 @@ class GCPReport(Report):
                 for (id, name, cost) in results if cost > 0
             ]
         self.saveFile(self.generateBillingCsvFileName(date), self.toCsv(rows))
+        self.saveFile(self.generateTerraCsvFileName(date), 'terra csv content')
 
     def doQuery(self, date: datetime.date):
         terra_workspaces = self.readTerraWorkspaces(self.terra_workspaces_path)
@@ -720,7 +746,8 @@ class GCPReport(Report):
         return rows
 
     def generateBetterReport(self) -> str:
-        self.saveUsageData(self.date)
+        if self.has_persist_config:
+            self.saveUsageData(self.date)
         return self.render_email(self.date, self.email_recipients, rows=self.doQuery(self.date), cost_cutoff=self.cost_cutoff())
 
     def cost_cutoff(self) -> float:
