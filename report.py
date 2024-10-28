@@ -198,7 +198,7 @@ class Report:
 
     def saveFile(self, fileName: str, content: str) -> None:
         utf8 = bytes(content, 'UTF-8')
-        s3 = boto3.client('s3', aws_access_key_id=self.persist_access_key, aws_secret_access_key=self.persist_secret_key) 
+        s3 = boto3.client('s3', aws_access_key_id=self.persist_access_key, aws_secret_access_key=self.persist_secret_key)
         s3.put_object(Bucket=self.persist_bucket, Key=fileName, Body=utf8)
         s3.close()
 
@@ -693,22 +693,24 @@ class GCPReport(Report):
     def __init__(self, config_path: str, date: datetime.date):
         super().__init__(platform='gcp', config_path=config_path, date=date)
 
-    def readTerraWorkspaces(self, path: str) -> Mapping:
+    def readTerraWorkspaces(self, path: str) -> Sequence[Mapping]:
         try:
             if path is not None:
-                infos = json.loads(Path(path).read_text())
-                if not isinstance(infos, list):
-                    return {}
-                workspaces = [info['workspace'] for info in infos]
-                return {workspace['googleProject']: workspace for workspace in workspaces}
+                workspaces = json.loads(Path(path).read_text())
+                if not isinstance(workspaces, list):
+                    return []
+                return workspaces
         except (OSError, json.JSONDecodeError):
-            return {}
-        return {}
+            return []
+        return []
 
-    def addCreatedByToRows(self, rows: Sequence[Mapping], terra_workspaces: Mapping):
+    def addCreatedByToRows(self, rows: Sequence[Mapping], terra_workspaces: Sequence[Mapping]):
+        id_to_created_by = { workspace['googleProject']: workspace['createdBy']
+            for workspace in [mapping['workspace'] for mapping in terra_workspaces if 'workspace' in mapping]
+            if 'googleProject' in workspace and 'createdBy' in workspace }
         for row in rows:
             id = row['id']
-            row['created_by'] = terra_workspaces[id]['createdBy'] if id in terra_workspaces and 'createdBy' in terra_workspaces[id] else 'Unowned'
+            row['created_by'] = id_to_created_by[id] if id in id_to_created_by else 'Unowned'
 
     def saveUsageData(self, date: datetime.date):
         rows = []
