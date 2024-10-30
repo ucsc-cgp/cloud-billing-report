@@ -192,9 +192,8 @@ class Report:
             (date.month + 1 if date.month < 12 else 1), 1) - datetime.timedelta(1)
 
     def daysOfMonthUpToAndIncluding(self, date: datetime.date) -> Sequence[datetime.date]:
-        return [datetime.date(2024, 10, 19)]
-        # firstDayOfMonth = self.firstDayOfMonth(date)
-        # return [firstDayOfMonth + datetime.timedelta(days=offset) for offset in range((date - firstDayOfMonth).days + 1)]
+        firstDayOfMonth = self.firstDayOfMonth(date)
+        return [firstDayOfMonth + datetime.timedelta(days=offset) for offset in range((date - firstDayOfMonth).days + 1)]
 
     def saveFile(self, fileName: str, content: str) -> None:
         utf8 = bytes(content, 'UTF-8')
@@ -210,8 +209,8 @@ class Report:
     def generateBillingCsvFileName(self, date: datetime.date) -> str:
         return self.generateFileName(self.platform, (str(date.year), str(date.month)), self.platform, 'csv')
 
-    def generateTerraCsvFileName(self, date: datetime.date) -> str:
-        return self.generateFileName('terra', (str(date.year), str(date.month), str(date.day)), 'terra', 'csv');
+    def generateTerraJsonFileName(self, date: datetime.date) -> str:
+        return self.generateFileName('terra', (str(date.year), str(date.month), str(date.day)), 'terra', 'json');
 
     def toCsv(self, rows: Sequence[Mapping[str, str]]) -> str:
         with io.StringIO('') as file:
@@ -220,6 +219,9 @@ class Report:
             for row in rows:
                 csvWriter.writerow(row)
             return file.getvalue()
+
+    def toJson(self, parsed_json) -> str:
+        return json.dumps(parsed_json)
 
 
 class AWSReport(Report):
@@ -614,9 +616,10 @@ class AWSReport(Report):
 
     def saveUsageData(self, date):
         rows = []
+        account_name_to_id = {v: k for k, v in self.accounts.items()}
         for day in self.daysOfMonthUpToAndIncluding(date):
             result = self.generateAccountSummary(self.accounts, day, day + datetime.timedelta(1))
-            rows += [{"date": day, "amount-billed": sum(result[account].values()), "linked-account": account} for account in result.keys()]
+            rows += [{"date": day, "amount-billed": sum(result[name].values()), "id": account_name_to_id[name], "linked-account": name} for name in result.keys()]
         self.saveFile(self.generateBillingCsvFileName(date), self.toCsv(rows))
 
     def generateBetterReport(self) -> str:
@@ -704,13 +707,10 @@ class GCPReport(Report):
             return []
         return []
 
-    def addCreatedByToRows(self, rows: Sequence[Mapping], terra_workspaces: Sequence[Mapping]):
-        id_to_created_by = { workspace['googleProject']: workspace['createdBy']
-            for workspace in [mapping['workspace'] for mapping in terra_workspaces if 'workspace' in mapping]
-            if 'googleProject' in workspace and 'createdBy' in workspace }
-        for row in rows:
-            id = row['id']
-            row['created_by'] = id_to_created_by[id] if id in id_to_created_by else 'Unowned'
+    def removeNonUcsc(self, terra_workspaces: Sequence[Mapping]) -> Sequence[Mapping]:
+        return [mapping for mapping in terra_workspaces if 'workspace' in mapping
+            and 'createdBy' in mapping['workspace']
+            and mapping['workspace']['createdBy'].endswith('ucsc.edu')]
 
     def saveUsageData(self, date: datetime.date):
         rows = []
@@ -721,7 +721,16 @@ class GCPReport(Report):
                 for (id, name, cost) in results if cost > 0
             ]
         self.saveFile(self.generateBillingCsvFileName(date), self.toCsv(rows))
-        self.saveFile(self.generateTerraCsvFileName(date), 'terra csv content')
+        terra_workspaces = self.readTerraWorkspaces(self.terra_workspaces_path)
+        self.saveFile(self.generateTerraJsonFileName(date), self.toJson(self.removeNonUcsc(terra_workspaces)))
+
+    def addCreatedByToRows(self, rows: Sequence[Mapping], terra_workspaces: Sequence[Mapping]):
+        id_to_created_by = { workspace['googleProject']: workspace['createdBy']
+            for workspace in [mapping['workspace'] for mapping in terra_workspaces if 'workspace' in mapping]
+            if 'googleProject' in workspace and 'createdBy' in workspace }
+        for row in rows:
+            id = row['id']
+            row['created_by'] = id_to_created_by[id] if id in id_to_created_by else 'Unowned'
 
     def doQuery(self, date: datetime.date):
         terra_workspaces = self.readTerraWorkspaces(self.terra_workspaces_path)
