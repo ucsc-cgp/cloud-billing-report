@@ -620,7 +620,10 @@ class AWSReport(Report):
         account_name_to_id = {v: k for k, v in self.accounts.items()}
         for day in self.daysOfMonthUpToAndIncluding(date):
             result = self.generateAccountSummary(self.accounts, day, day + datetime.timedelta(1))
-            rows += [{"date": day, "amount_billed": sum(result[name].values()), "account_id": account_name_to_id[name], "account_name": name} for name in result.keys()]
+            rows += [
+                {"date": day, "amount_billed": sum(result[name].values()), "account_id": account_name_to_id[name], "account_name": name}
+                for name in result.keys()
+            ]
         self.saveFile(self.generateBillingCsvFileName(date), self.toCsv(rows))
 
     def generateBetterReport(self) -> str:
