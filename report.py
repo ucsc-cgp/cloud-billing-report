@@ -12,6 +12,7 @@ from email.message import (
     EmailMessage,
 )
 import gzip
+import io
 import itertools
 import json
 import numbers
@@ -22,6 +23,7 @@ from pathlib import (
 import re
 import tempfile
 from typing import (
+    Any,
     Iterable,
     Iterator,
     Mapping,
@@ -58,7 +60,8 @@ class Report:
         self.date = date
 
         with open(config_path, 'r') as config_json:
-            self._config = json.load(config_json)[platform]
+            self._config_global = json.load(config_json)
+            self._config_platform = self._config_global[platform]
 
         self.jinja_env = jinja2.Environment(loader=jinja2.FileSystemLoader('templates/'))
         self.jinja_env.filters.update({
@@ -78,62 +81,78 @@ class Report:
 
     @property
     def bucket(self) -> str:
-        return self._config['bucket']
+        return self._config_platform['bucket']
 
     @property
     def warning_threshold(self) -> int:
         try:
-            return self._config['warning_threshold']
+            return self._config_platform['warning_threshold']
         except KeyError:
             return 200
 
     @property
     def email_from(self) -> str:
-        return self._config['from']
+        return self._config_platform['from']
 
     @property
     def email_recipients(self) -> Sequence:
-        return self._config['recipients']
+        return self._config_platform['recipients']
 
     @property
     def access_key(self) -> str:
         assert self.platform == 'aws'
-        return self._config['access_key']
+        return self._config_platform['access_key']
 
     @property
     def secret_key(self) -> str:
         assert self.platform == 'aws'
-        return self._config['secret_key']
+        return self._config_platform['secret_key']
 
     @property
     def report_prefix(self) -> str:
         assert self.platform == 'aws'
-        return self._config['prefix']
+        return self._config_platform['prefix']
 
     @property
     def report_name(self) -> str:
         assert self.platform == 'aws'
-        return self._config['report_name']
+        return self._config_platform['report_name']
 
     @property
     def accounts(self) -> Mapping:
         assert self.platform == 'aws'
-        return self._config['accounts']
+        return self._config_platform['accounts']
 
     @property
     def compliance(self) -> Mapping:
         assert self.platform == 'aws'
-        return self._config['compliance']
+        return self._config_platform['compliance']
 
     @property
     def bigquery_table(self) -> str:
         assert self.platform == 'gcp'
-        return self._config['bigquery_table']
+        return self._config_platform['bigquery_table']
 
     @property
     def terra_workspaces_path(self) -> str:
         assert self.platform == 'gcp'
-        return self._config.get('terra_workspaces_path')
+        return self._config_platform.get('terra_workspaces_path')
+
+    @property
+    def persist_access_key(self) -> str:
+        return self._config_global['persist']['access_key']
+
+    @property
+    def persist_secret_key(self) -> str:
+        return self._config_global['persist']['secret_key']
+
+    @property
+    def persist_bucket(self) -> str:
+        return self._config_global['persist']['bucket']
+
+    @property
+    def has_persist_config(self) -> bool:
+        return 'persist' in self._config_global
 
     def render_email(self,
                      report_date: datetime.date,
@@ -164,6 +183,50 @@ class Report:
         body = template.render(report_date=report_date, resource_list=resources)
         msg.set_content(body, subtype='html')
         return msg.as_string()
+
+    def first_day_of_month(self, date: datetime.date) -> datetime.date:
+        return date.replace(day=1)
+
+    def last_day_of_month(self, date: datetime.date) -> datetime.date:
+        return datetime.date(
+            date.year + (date.month == 12),
+            (date.month + 1 if date.month < 12 else 1), 1
+        ) - datetime.timedelta(1)
+
+    def days_of_month_up_to_and_including(self, date: datetime.date) -> Sequence[datetime.date]:
+        first_day_of_month = self.first_day_of_month(date)
+        return [first_day_of_month + datetime.timedelta(days=offset) for offset in range((date - first_day_of_month).days + 1)]
+
+    def save_file(self, fileName: str, content: str) -> None:
+        utf8 = bytes(content, 'UTF-8')
+        s3 = boto3.client('s3', aws_access_key_id=self.persist_access_key, aws_secret_access_key=self.persist_secret_key)
+        s3.put_object(Bucket=self.persist_bucket, Key=fileName, Body=utf8)
+        s3.close()
+
+    def generate_file_name(self, root: str, dateComponents: Iterable[str], base: str, extension: str) -> str:
+        slash_date = '/'.join(dateComponents)
+        dash_date = '-'.join(dateComponents)
+        return f'{root}/{slash_date}/{base}-{dash_date}.{extension}'
+
+    def generate_billing_csv_file_name(self, date: datetime.date) -> str:
+        return self.generate_file_name(self.platform, (str(date.year), str(date.month)), self.platform, 'csv')
+
+    def generate_terra_json_file_name(self, date: datetime.date) -> str:
+        return self.generate_file_name('terra', (str(date.year), str(date.month), str(date.day)), 'terra', 'json')
+
+    def to_csv(self, rows: Sequence[Mapping[str, Any]]) -> str:
+        with io.StringIO('') as file:
+            csv_writer = csv.DictWriter(file, fieldnames=rows[0].keys())
+            csv_writer.writeheader()
+            for row in rows:
+                csv_writer.writerow(row)
+            return file.getvalue()
+
+    def to_json(self, parsed_json) -> str:
+        return json.dumps(parsed_json, indent=2)
+
+    def iso_date(self, date: datetime.date) -> str:
+        return date.strftime("%Y-%m-%d")
 
 
 class AWSReport(Report):
@@ -276,9 +339,6 @@ class AWSReport(Report):
 
         accountIds = list(accounts.keys())
 
-        startDate = startDate.strftime("%Y-%m-%d")
-        endDate = endDate.strftime("%Y-%m-%d")
-
         billingClient = boto3.client('ce',
                                      aws_access_key_id=self.access_key,
                                      aws_secret_access_key=self.secret_key)
@@ -286,8 +346,8 @@ class AWSReport(Report):
         # Make the request
         result = billingClient.get_cost_and_usage(
             TimePeriod={
-                'Start': startDate,
-                'End': endDate
+                'Start': self.iso_date(startDate),
+                'End': self.iso_date(endDate)
             },
             Granularity="MONTHLY",
             Filter={
@@ -344,9 +404,6 @@ class AWSReport(Report):
 
         accountIds = list(accounts.keys())
 
-        startDate = startDate.strftime("%Y-%m-%d")
-        endDate = endDate.strftime("%Y-%m-%d")
-
         billingClient = boto3.client('ce',
                                      aws_access_key_id=self.access_key,
                                      aws_secret_access_key=self.secret_key)
@@ -354,8 +411,8 @@ class AWSReport(Report):
         # Make the request
         result = billingClient.get_cost_and_usage(
             TimePeriod={
-                'Start': startDate,
-                'End': endDate
+                'Start': self.iso_date(startDate),
+                'End': self.iso_date(endDate)
             },
             Granularity="MONTHLY",
             Filter={
@@ -453,9 +510,6 @@ class AWSReport(Report):
 
         accountIds = list(accounts.keys())
 
-        startDate = startDate.strftime("%Y-%m-%d")
-        endDate = endDate.strftime("%Y-%m-%d")
-
         billingClient = boto3.client('ce',
                                      aws_access_key_id=self.access_key,
                                      aws_secret_access_key=self.secret_key)
@@ -463,8 +517,8 @@ class AWSReport(Report):
         # Make the request
         result = billingClient.get_cost_and_usage(
             TimePeriod={
-                'Start': startDate,
-                'End': endDate
+                'Start': self.iso_date(startDate),
+                'End': self.iso_date(endDate)
             },
             Granularity="MONTHLY",
             Filter={
@@ -556,12 +610,26 @@ class AWSReport(Report):
 
         return userCostSummary
 
+    def saveUsageData(self, date):
+        rows = []
+        account_name_to_id = {v: k for k, v in self.accounts.items()}
+        for day in self.days_of_month_up_to_and_including(date):
+            result = self.generateAccountSummary(self.accounts, day, day + datetime.timedelta(1))
+            rows += [
+                {"date": day, "amount_billed": sum(result[name].values()), "account_id": account_name_to_id[name], "account_name": name}
+                for name in result.keys()
+            ]
+        self.save_file(self.generate_billing_csv_file_name(date), self.to_csv(rows))
+
     def generateBetterReport(self) -> str:
         # Get date variables. We will be making the report for the previous day.
         yesterday = datetime.date.today() - datetime.timedelta(1)
-        firstDayOfMonth = yesterday.replace(day=1)
-        lastDayOfMonth = datetime.date(yesterday.year + (yesterday.month == 12),
-                                       (yesterday.month + 1 if yesterday.month < 12 else 1), 1) - datetime.timedelta(1)
+        firstDayOfMonth = self.first_day_of_month(yesterday)
+        lastDayOfMonth = self.last_day_of_month(yesterday)
+
+        # Save usage data
+        if self.has_persist_config:
+            self.saveUsageData(yesterday)
 
         # Get a monthly and daily aggregation of costs. These reports are a nested dictionary in the form:
         # dictionary {account1: {service1: cost1, service2: cost2, ...}, account2: ...}
@@ -627,28 +695,47 @@ class GCPReport(Report):
     def __init__(self, config_path: str, date: datetime.date):
         super().__init__(platform='gcp', config_path=config_path, date=date)
 
-    def readTerraWorkspaces(self, path: str) -> Mapping:
+    def readTerraWorkspaces(self, path: str) -> Sequence[Mapping]:
         try:
             if path is not None:
-                infos = json.loads(Path(path).read_text())
-                if not isinstance(infos, list):
-                    return {}
-                workspaces = [info['workspace'] for info in infos]
-                return {workspace['googleProject']: workspace for workspace in workspaces}
+                workspaces = json.loads(Path(path).read_text())
+                if not isinstance(workspaces, list):
+                    return []
+                return workspaces
         except (OSError, json.JSONDecodeError):
-            return {}
-        return {}
+            return []
+        return []
 
-    def addCreatedByToRows(self, rows: Sequence[Mapping], terra_workspaces: Mapping):
+    def isUcscEmail(self, email: str) -> bool:
+        return email.endswith('ucsc.edu') or email.endswith('gmail.com')
+
+    def saveUsageData(self, date: datetime.date):
+        rows = []
+        for day in self.days_of_month_up_to_and_including(date):
+            results = group_by(self.doQuery(day), 'id', 'name', 'cost_today')
+            rows += [
+                {"date": day, "amount_billed": cost, "project_id": id, "project_name": name}
+                for (id, name, cost) in results if cost > 0
+            ]
+        self.save_file(self.generate_billing_csv_file_name(date), self.to_csv(rows))
+        terra_workspaces = self.readTerraWorkspaces(self.terra_workspaces_path)
+        self.save_file(self.generate_terra_json_file_name(date), self.to_json(terra_workspaces))
+
+    def addCreatedByToRows(self, rows: Sequence[Mapping], terra_workspaces: Sequence[Mapping]):
+        id_to_created_by = {
+            workspace['googleProject']: workspace['createdBy']
+            for workspace in [mapping['workspace'] for mapping in terra_workspaces if 'workspace' in mapping]
+            if 'googleProject' in workspace and 'createdBy' in workspace
+        }
         for row in rows:
             id = row['id']
-            row['created_by'] = terra_workspaces[id]['createdBy'] if id in terra_workspaces and 'createdBy' in terra_workspaces[id] else 'Unowned'
+            row['created_by'] = id_to_created_by[id] if id in id_to_created_by else 'Unowned'
 
-    def generateBetterReport(self) -> str:
+    def doQuery(self, date: datetime.date):
         terra_workspaces = self.readTerraWorkspaces(self.terra_workspaces_path)
         client = bigquery.Client()
-        query_month = self.date.strftime('%Y%m')
-        query_today = self.date.strftime('%Y-%m-%d')
+        query_month = date.strftime('%Y%m')
+        query_today = date.strftime('%Y-%m-%d')
 
         # noinspection SqlNoDataSourceInspection
         query = f'''SELECT
@@ -666,7 +753,12 @@ class GCPReport(Report):
         rows = list(query_job.result())
         rows = [dict(row) for row in rows]
         self.addCreatedByToRows(rows, terra_workspaces)
-        return self.render_email(self.date, self.email_recipients, rows=rows, cost_cutoff=self.cost_cutoff(), terra_workspaces=terra_workspaces)
+        return rows
+
+    def generateBetterReport(self) -> str:
+        if self.has_persist_config:
+            self.saveUsageData(self.date)
+        return self.render_email(self.date, self.email_recipients, rows=self.doQuery(self.date), cost_cutoff=self.cost_cutoff())
 
     def cost_cutoff(self) -> float:
         # cost cutoff is $1 on all days but friday, when it effectively does not exist

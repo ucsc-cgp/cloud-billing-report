@@ -73,13 +73,13 @@
     </table>
 
     <h2>Details by project</h2>
-    {% for id, month_total, today_total, project in rows|group_by('id', 'cost_month', 'cost_today', 'name')|sort_by(1) %}
+    {% for id, month_total, today_total, project, created_by in rows|group_by('id', 'cost_month', 'cost_today', 'name', 'created_by')|sort_by(1) %}
       {%- if month_total >= cost_cutoff -%}
         <a name='{{ id|to_project_id }}' id='{{ id|to_project_id }}'></a>
         <h3>Report for project {{ project }}</h3>
         <p>GCP project ID: <a href="https://console.cloud.google.com/welcome?project={{ id }}">{{ id }}</a>
-        {% if id in terra_workspaces and 'createdBy' in terra_workspaces[id] %}
-          <br>Terra workspace created by {{ terra_workspaces[id]['createdBy'] }}
+        {% if created_by != 'Unowned' %}
+          <br>Terra workspace created by {{ created_by }}
         {% endif %}
         </p>
         <table>
