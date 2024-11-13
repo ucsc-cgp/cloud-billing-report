@@ -221,7 +221,7 @@ class Report:
             return file.getvalue()
 
     def toJson(self, parsed_json) -> str:
-        return json.dumps(parsed_json)
+        return json.dumps(parsed_json, indent=2)
 
 
 class AWSReport(Report):
@@ -619,7 +619,7 @@ class AWSReport(Report):
         account_name_to_id = {v: k for k, v in self.accounts.items()}
         for day in self.daysOfMonthUpToAndIncluding(date):
             result = self.generateAccountSummary(self.accounts, day, day + datetime.timedelta(1))
-            rows += [{"date": day, "amount-billed": sum(result[name].values()), "id": account_name_to_id[name], "linked-account": name} for name in result.keys()]
+            rows += [{"date": day, "amount_billed": sum(result[name].values()), "account_id": account_name_to_id[name], "account_name": name} for name in result.keys()]
         self.saveFile(self.generateBillingCsvFileName(date), self.toCsv(rows))
 
     def generateBetterReport(self) -> str:
@@ -710,14 +710,17 @@ class GCPReport(Report):
     def removeNonUcsc(self, terra_workspaces: Sequence[Mapping]) -> Sequence[Mapping]:
         return [mapping for mapping in terra_workspaces if 'workspace' in mapping
             and 'createdBy' in mapping['workspace']
-            and mapping['workspace']['createdBy'].endswith('ucsc.edu')]
+            and self.isUcscEmail(mapping['workspace']['createdBy'])]
+
+    def isUcscEmail(self, email: str) -> bool:
+        return email.endswith('ucsc.edu') or email.endswith('gmail.com')
 
     def saveUsageData(self, date: datetime.date):
         rows = []
         for day in self.daysOfMonthUpToAndIncluding(date):
             results = group_by(self.doQuery(day), 'id', 'name', 'cost_today')
             rows += [
-                {"date": day, "amount-billed": cost, "project-id": id, "project-name": name}
+                {"date": day, "amount_billed": cost, "project_id": id, "project_name": name}
                 for (id, name, cost) in results if cost > 0
             ]
         self.saveFile(self.generateBillingCsvFileName(date), self.toCsv(rows))
