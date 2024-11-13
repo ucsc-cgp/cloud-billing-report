@@ -78,7 +78,7 @@
         <a name='{{ id|to_project_id }}' id='{{ id|to_project_id }}'></a>
         <h3>Report for project {{ project }}</h3>
         <p>GCP project ID: <a href="https://console.cloud.google.com/welcome?project={{ id }}">{{ id }}</a>
-        {% if created_by !=  'Unowned' %}
+        {% if created_by != 'Unowned' %}
           <br>Terra workspace created by {{ created_by }}
         {% endif %}
         </p>
