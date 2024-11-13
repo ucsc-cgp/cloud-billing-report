@@ -23,6 +23,7 @@ from pathlib import (
 import re
 import tempfile
 from typing import (
+    Any,
     Iterable,
     Iterator,
     Mapping,
@@ -150,7 +151,7 @@ class Report:
         return self._config_global['persist']['bucket']
 
     @property
-    def has_persist_config(self) -> str:
+    def has_persist_config(self) -> bool:
         return self._config_global['persist'] is not None
 
     def render_email(self,
@@ -213,7 +214,7 @@ class Report:
     def generateTerraJsonFileName(self, date: datetime.date) -> str:
         return self.generateFileName('terra', (str(date.year), str(date.month), str(date.day)), 'terra', 'json')
 
-    def toCsv(self, rows: Sequence[Mapping[str, str]]) -> str:
+    def toCsv(self, rows: Sequence[Mapping[str, Any]]) -> str:
         with io.StringIO('') as file:
             csvWriter = csv.DictWriter(file, fieldnames=rows[0].keys())
             csvWriter.writeheader()
@@ -223,6 +224,9 @@ class Report:
 
     def toJson(self, parsed_json) -> str:
         return json.dumps(parsed_json, indent=2)
+
+    def isoDate(self, date: datetime.date) -> str:
+        return date.strftime("%Y-%m-%d")
 
 
 class AWSReport(Report):
@@ -335,9 +339,6 @@ class AWSReport(Report):
 
         accountIds = list(accounts.keys())
 
-        startDate = startDate.strftime("%Y-%m-%d")
-        endDate = endDate.strftime("%Y-%m-%d")
-
         billingClient = boto3.client('ce',
                                      aws_access_key_id=self.access_key,
                                      aws_secret_access_key=self.secret_key)
@@ -345,8 +346,8 @@ class AWSReport(Report):
         # Make the request
         result = billingClient.get_cost_and_usage(
             TimePeriod={
-                'Start': startDate,
-                'End': endDate
+                'Start': self.isoDate(startDate),
+                'End': self.isoDate(endDate)
             },
             Granularity="MONTHLY",
             Filter={
@@ -403,9 +404,6 @@ class AWSReport(Report):
 
         accountIds = list(accounts.keys())
 
-        startDate = startDate.strftime("%Y-%m-%d")
-        endDate = endDate.strftime("%Y-%m-%d")
-
         billingClient = boto3.client('ce',
                                      aws_access_key_id=self.access_key,
                                      aws_secret_access_key=self.secret_key)
@@ -413,8 +411,8 @@ class AWSReport(Report):
         # Make the request
         result = billingClient.get_cost_and_usage(
             TimePeriod={
-                'Start': startDate,
-                'End': endDate
+                'Start': self.isoDate(startDate),
+                'End': self.isoDate(endDate)
             },
             Granularity="MONTHLY",
             Filter={
@@ -512,9 +510,6 @@ class AWSReport(Report):
 
         accountIds = list(accounts.keys())
 
-        startDate = startDate.strftime("%Y-%m-%d")
-        endDate = endDate.strftime("%Y-%m-%d")
-
         billingClient = boto3.client('ce',
                                      aws_access_key_id=self.access_key,
                                      aws_secret_access_key=self.secret_key)
@@ -522,8 +517,8 @@ class AWSReport(Report):
         # Make the request
         result = billingClient.get_cost_and_usage(
             TimePeriod={
-                'Start': startDate,
-                'End': endDate
+                'Start': self.isoDate(startDate),
+                'End': self.isoDate(endDate)
             },
             Granularity="MONTHLY",
             Filter={
