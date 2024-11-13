@@ -706,13 +706,6 @@ class GCPReport(Report):
             return []
         return []
 
-    def removeNonUcsc(self, terra_workspaces: Sequence[Mapping]) -> Sequence[Mapping]:
-        return [
-            mapping for mapping in terra_workspaces if 'workspace' in mapping
-            and 'createdBy' in mapping['workspace']
-            and self.isUcscEmail(mapping['workspace']['createdBy'])
-        ]
-
     def isUcscEmail(self, email: str) -> bool:
         return email.endswith('ucsc.edu') or email.endswith('gmail.com')
 
@@ -726,7 +719,7 @@ class GCPReport(Report):
             ]
         self.save_file(self.generate_billing_csv_file_name(date), self.to_csv(rows))
         terra_workspaces = self.readTerraWorkspaces(self.terra_workspaces_path)
-        self.save_file(self.generate_terra_json_file_name(date), self.to_json(self.removeNonUcsc(terra_workspaces)))
+        self.save_file(self.generate_terra_json_file_name(date), self.to_json(terra_workspaces))
 
     def addCreatedByToRows(self, rows: Sequence[Mapping], terra_workspaces: Sequence[Mapping]):
         id_to_created_by = {
