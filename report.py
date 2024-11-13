@@ -184,48 +184,48 @@ class Report:
         msg.set_content(body, subtype='html')
         return msg.as_string()
 
-    def firstDayOfMonth(self, date: datetime.date) -> datetime.date:
+    def first_day_of_month(self, date: datetime.date) -> datetime.date:
         return date.replace(day=1)
 
-    def lastDayOfMonth(self, date: datetime.date) -> datetime.date:
+    def last_day_of_month(self, date: datetime.date) -> datetime.date:
         return datetime.date(
             date.year + (date.month == 12),
             (date.month + 1 if date.month < 12 else 1), 1
         ) - datetime.timedelta(1)
 
-    def daysOfMonthUpToAndIncluding(self, date: datetime.date) -> Sequence[datetime.date]:
-        firstDayOfMonth = self.firstDayOfMonth(date)
-        return [firstDayOfMonth + datetime.timedelta(days=offset) for offset in range((date - firstDayOfMonth).days + 1)]
+    def days_of_month_up_to_and_including(self, date: datetime.date) -> Sequence[datetime.date]:
+        first_day_of_month = self.first_day_of_month(date)
+        return [first_day_of_month + datetime.timedelta(days=offset) for offset in range((date - first_day_of_month).days + 1)]
 
-    def saveFile(self, fileName: str, content: str) -> None:
+    def save_file(self, fileName: str, content: str) -> None:
         utf8 = bytes(content, 'UTF-8')
         s3 = boto3.client('s3', aws_access_key_id=self.persist_access_key, aws_secret_access_key=self.persist_secret_key)
         s3.put_object(Bucket=self.persist_bucket, Key=fileName, Body=utf8)
         s3.close()
 
-    def generateFileName(self, root: str, dateComponents: Iterable[str], base: str, extension: str) -> str:
-        slashDate = '/'.join(dateComponents)
-        dashDate = '-'.join(dateComponents)
-        return f'{root}/{slashDate}/{base}-{dashDate}.{extension}'
+    def generate_file_name(self, root: str, dateComponents: Iterable[str], base: str, extension: str) -> str:
+        slash_date = '/'.join(dateComponents)
+        dash_date = '-'.join(dateComponents)
+        return f'{root}/{slash_date}/{base}-{dash_date}.{extension}'
 
-    def generateBillingCsvFileName(self, date: datetime.date) -> str:
-        return self.generateFileName(self.platform, (str(date.year), str(date.month)), self.platform, 'csv')
+    def generate_billing_csv_file_name(self, date: datetime.date) -> str:
+        return self.generate_file_name(self.platform, (str(date.year), str(date.month)), self.platform, 'csv')
 
-    def generateTerraJsonFileName(self, date: datetime.date) -> str:
-        return self.generateFileName('terra', (str(date.year), str(date.month), str(date.day)), 'terra', 'json')
+    def generate_terra_json_file_name(self, date: datetime.date) -> str:
+        return self.generate_file_name('terra', (str(date.year), str(date.month), str(date.day)), 'terra', 'json')
 
-    def toCsv(self, rows: Sequence[Mapping[str, Any]]) -> str:
+    def to_csv(self, rows: Sequence[Mapping[str, Any]]) -> str:
         with io.StringIO('') as file:
-            csvWriter = csv.DictWriter(file, fieldnames=rows[0].keys())
-            csvWriter.writeheader()
+            csv_writer = csv.DictWriter(file, fieldnames=rows[0].keys())
+            csv_writer.writeheader()
             for row in rows:
-                csvWriter.writerow(row)
+                csv_writer.writerow(row)
             return file.getvalue()
 
-    def toJson(self, parsed_json) -> str:
+    def to_json(self, parsed_json) -> str:
         return json.dumps(parsed_json, indent=2)
 
-    def isoDate(self, date: datetime.date) -> str:
+    def iso_date(self, date: datetime.date) -> str:
         return date.strftime("%Y-%m-%d")
 
 
@@ -346,8 +346,8 @@ class AWSReport(Report):
         # Make the request
         result = billingClient.get_cost_and_usage(
             TimePeriod={
-                'Start': self.isoDate(startDate),
-                'End': self.isoDate(endDate)
+                'Start': self.iso_date(startDate),
+                'End': self.iso_date(endDate)
             },
             Granularity="MONTHLY",
             Filter={
@@ -411,8 +411,8 @@ class AWSReport(Report):
         # Make the request
         result = billingClient.get_cost_and_usage(
             TimePeriod={
-                'Start': self.isoDate(startDate),
-                'End': self.isoDate(endDate)
+                'Start': self.iso_date(startDate),
+                'End': self.iso_date(endDate)
             },
             Granularity="MONTHLY",
             Filter={
@@ -517,8 +517,8 @@ class AWSReport(Report):
         # Make the request
         result = billingClient.get_cost_and_usage(
             TimePeriod={
-                'Start': self.isoDate(startDate),
-                'End': self.isoDate(endDate)
+                'Start': self.iso_date(startDate),
+                'End': self.iso_date(endDate)
             },
             Granularity="MONTHLY",
             Filter={
@@ -613,19 +613,19 @@ class AWSReport(Report):
     def saveUsageData(self, date):
         rows = []
         account_name_to_id = {v: k for k, v in self.accounts.items()}
-        for day in self.daysOfMonthUpToAndIncluding(date):
+        for day in self.days_of_month_up_to_and_including(date):
             result = self.generateAccountSummary(self.accounts, day, day + datetime.timedelta(1))
             rows += [
                 {"date": day, "amount_billed": sum(result[name].values()), "account_id": account_name_to_id[name], "account_name": name}
                 for name in result.keys()
             ]
-        self.saveFile(self.generateBillingCsvFileName(date), self.toCsv(rows))
+        self.save_file(self.generate_billing_csv_file_name(date), self.to_csv(rows))
 
     def generateBetterReport(self) -> str:
         # Get date variables. We will be making the report for the previous day.
         yesterday = datetime.date.today() - datetime.timedelta(1)
-        firstDayOfMonth = self.firstDayOfMonth(yesterday)
-        lastDayOfMonth = self.lastDayOfMonth(yesterday)
+        firstDayOfMonth = self.first_day_of_month(yesterday)
+        lastDayOfMonth = self.last_day_of_month(yesterday)
 
         # Save usage data
         if self.has_persist_config:
@@ -718,15 +718,15 @@ class GCPReport(Report):
 
     def saveUsageData(self, date: datetime.date):
         rows = []
-        for day in self.daysOfMonthUpToAndIncluding(date):
+        for day in self.days_of_month_up_to_and_including(date):
             results = group_by(self.doQuery(day), 'id', 'name', 'cost_today')
             rows += [
                 {"date": day, "amount_billed": cost, "project_id": id, "project_name": name}
                 for (id, name, cost) in results if cost > 0
             ]
-        self.saveFile(self.generateBillingCsvFileName(date), self.toCsv(rows))
+        self.save_file(self.generate_billing_csv_file_name(date), self.to_csv(rows))
         terra_workspaces = self.readTerraWorkspaces(self.terra_workspaces_path)
-        self.saveFile(self.generateTerraJsonFileName(date), self.toJson(self.removeNonUcsc(terra_workspaces)))
+        self.save_file(self.generate_terra_json_file_name(date), self.to_json(self.removeNonUcsc(terra_workspaces)))
 
     def addCreatedByToRows(self, rows: Sequence[Mapping], terra_workspaces: Sequence[Mapping]):
         id_to_created_by = {
