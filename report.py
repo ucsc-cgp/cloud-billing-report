@@ -21,7 +21,6 @@ from pathlib import (
     Path,
 )
 import re
-import sys
 import tempfile
 from typing import (
     Iterable,
@@ -152,7 +151,7 @@ class Report:
 
     @property
     def has_persist_config(self) -> str:
-        return self._config_global['persist'] != None
+        return self._config_global['persist'] is not None
 
     def render_email(self,
                      report_date: datetime.date,
@@ -188,8 +187,10 @@ class Report:
         return date.replace(day=1)
 
     def lastDayOfMonth(self, date: datetime.date) -> datetime.date:
-        return datetime.date(date.year + (date.month == 12),
-            (date.month + 1 if date.month < 12 else 1), 1) - datetime.timedelta(1)
+        return datetime.date(
+            date.year + (date.month == 12),
+            (date.month + 1 if date.month < 12 else 1), 1
+        ) - datetime.timedelta(1)
 
     def daysOfMonthUpToAndIncluding(self, date: datetime.date) -> Sequence[datetime.date]:
         firstDayOfMonth = self.firstDayOfMonth(date)
@@ -210,7 +211,7 @@ class Report:
         return self.generateFileName(self.platform, (str(date.year), str(date.month)), self.platform, 'csv')
 
     def generateTerraJsonFileName(self, date: datetime.date) -> str:
-        return self.generateFileName('terra', (str(date.year), str(date.month), str(date.day)), 'terra', 'json');
+        return self.generateFileName('terra', (str(date.year), str(date.month), str(date.day)), 'terra', 'json')
 
     def toCsv(self, rows: Sequence[Mapping[str, str]]) -> str:
         with io.StringIO('') as file:
@@ -708,9 +709,11 @@ class GCPReport(Report):
         return []
 
     def removeNonUcsc(self, terra_workspaces: Sequence[Mapping]) -> Sequence[Mapping]:
-        return [mapping for mapping in terra_workspaces if 'workspace' in mapping
+        return [
+            mapping for mapping in terra_workspaces if 'workspace' in mapping
             and 'createdBy' in mapping['workspace']
-            and self.isUcscEmail(mapping['workspace']['createdBy'])]
+            and self.isUcscEmail(mapping['workspace']['createdBy'])
+        ]
 
     def isUcscEmail(self, email: str) -> bool:
         return email.endswith('ucsc.edu') or email.endswith('gmail.com')
@@ -728,9 +731,11 @@ class GCPReport(Report):
         self.saveFile(self.generateTerraJsonFileName(date), self.toJson(self.removeNonUcsc(terra_workspaces)))
 
     def addCreatedByToRows(self, rows: Sequence[Mapping], terra_workspaces: Sequence[Mapping]):
-        id_to_created_by = { workspace['googleProject']: workspace['createdBy']
+        id_to_created_by = {
+            workspace['googleProject']: workspace['createdBy']
             for workspace in [mapping['workspace'] for mapping in terra_workspaces if 'workspace' in mapping]
-            if 'googleProject' in workspace and 'createdBy' in workspace }
+            if 'googleProject' in workspace and 'createdBy' in workspace
+        }
         for row in rows:
             id = row['id']
             row['created_by'] = id_to_created_by[id] if id in id_to_created_by else 'Unowned'
