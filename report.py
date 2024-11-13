@@ -152,7 +152,7 @@ class Report:
 
     @property
     def has_persist_config(self) -> bool:
-        return self._config_global['persist'] is not None
+        return 'persist' in self._config_global
 
     def render_email(self,
                      report_date: datetime.date,
