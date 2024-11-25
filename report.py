@@ -209,10 +209,10 @@ class Report:
         return f'{root}/{slash_date}/{base}-{dash_date}.{extension}'
 
     def generate_billing_csv_file_name(self, date: datetime.date) -> str:
-        return self.generate_file_name(self.platform, (str(date.year), str(date.month)), self.platform, 'csv')
+        return self.generate_file_name(self.platform, (str(date.year).zfill(4), str(date.month).zfill(2)), self.platform, 'csv')
 
     def generate_terra_json_file_name(self, date: datetime.date) -> str:
-        return self.generate_file_name('terra', (str(date.year), str(date.month), str(date.day)), 'terra', 'json')
+        return self.generate_file_name('terra', (str(date.year).zfill(4), str(date.month).zfill(2), str(date.day).zfill(2)), 'terra', 'json')
 
     def to_csv(self, rows: Sequence[Mapping[str, Any]]) -> str:
         with io.StringIO('') as file:
@@ -616,7 +616,7 @@ class AWSReport(Report):
         for day in self.days_of_month_up_to_and_including(date):
             result = self.generateAccountSummary(self.accounts, day, day + datetime.timedelta(1))
             rows += [
-                {"date": day, "amount_billed": sum(result[name].values()), "account_id": account_name_to_id[name], "account_name": name}
+                {"date": self.iso_date(day), "amount_billed": sum(result[name].values()), "account_id": account_name_to_id[name], "account_name": name}
                 for name in result.keys()
             ]
         self.save_file(self.generate_billing_csv_file_name(date), self.to_csv(rows))
@@ -714,7 +714,7 @@ class GCPReport(Report):
         for day in self.days_of_month_up_to_and_including(date):
             results = group_by(self.doQuery(day), 'id', 'name', 'cost_today')
             rows += [
-                {"date": day, "amount_billed": cost, "project_id": id, "project_name": name}
+                {"date": self.iso_date(day), "amount_billed": cost, "project_id": id, "project_name": name}
                 for (id, name, cost) in results if cost > 0
             ]
         self.save_file(self.generate_billing_csv_file_name(date), self.to_csv(rows))
