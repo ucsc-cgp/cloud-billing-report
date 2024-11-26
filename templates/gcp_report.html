@@ -17,10 +17,10 @@
         </tr>
         </thead>
         <tbody>
-        {% for id, cost_month, cost_today, project in rows|group_by('id', 'cost_month', 'cost_today', 'name')|sort_by(1) %}
+        {% for id, cost_month, cost_today, project, created_by in rows|group_by('id', 'cost_month', 'cost_today', 'name', 'created_by')|sort_by(1) %}
           {%- if cost_month >= cost_cutoff -%}
             <tr>
-                <td><a href='#{{ id|to_project_id }}'>{{ project }}</a></td>
+                <td><a href='#{{ id|to_project_id }}'>{{ project }}</a>{% if created_by != 'Unowned' %} ({{ created_by }}){% endif %}</td>
                 <td>{{ cost_month|print_amount }}</td>
                 <td>{{ cost_today|print_diff }}</td>
             </tr>
