@@ -712,10 +712,10 @@ class GCPReport(Report):
     def saveUsageData(self, date: datetime.date):
         rows = []
         for day in self.days_of_month_up_to_and_including(date):
-            results = group_by(self.doQuery(day), 'id', 'name', 'cost_today')
+            results = group_by(self.doQuery(day), 'id', 'name', 'cost_today', 'raw_cost_today')
             rows += [
-                {"date": self.iso_date(day), "amount_billed": cost, "project_id": id, "project_name": name}
-                for (id, name, cost) in results if cost > 0
+                {"date": self.iso_date(day), "amount_billed": cost_today, "project_id": id, "project_name": name, "unadjusted_cost": raw_cost_today}
+                for (id, name, cost_today, raw_cost_today) in results if cost_today > 0 or raw_cost_today > 0
             ]
         self.save_file(self.generate_billing_csv_file_name(date), self.to_csv(rows))
         terra_workspaces = self.readTerraWorkspaces(self.terra_workspaces_path)
@@ -743,6 +743,8 @@ class GCPReport(Report):
               service.description,
               SUM(CASE WHEN DATE(usage_start_time) <= '{query_today}' THEN cost + IFNULL(creds.amount, 0) ELSE 0 END) AS cost_month,
               SUM(CASE WHEN DATE(usage_start_time)  = '{query_today}' THEN cost + IFNULL(creds.amount, 0) ELSE 0 END) AS cost_today,
+              SUM(CASE WHEN DATE(usage_start_time) <= '{query_today}' THEN cost ELSE 0 END) as raw_cost_month,
+              SUM(CASE WHEN DATE(usage_start_time)  = '{query_today}' THEN cost ELSE 0 END) as raw_cost_today,
               project.id
             FROM `{self.bigquery_table}`
             LEFT JOIN UNNEST(credits) AS creds
