@@ -147,4 +147,36 @@
       {%- endif -%}
     {% endfor %}
 
+    <h2>Credits by project {{ report_date|ym }}</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>Project Name</th>
+            <th>Unadjusted Cost</th>
+            <th>Billed Amount</th>
+            <th>Credits</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for id, raw_cost_month, cost_month, project, created_by in rows|group_by('id', 'raw_cost_month', 'cost_month', 'name', 'created_by')|sort_by(1) %}
+          {%- if raw_cost_month >= cost_cutoff -%}
+            <tr>
+                <td><a href='#{{ id|to_project_id }}'>{{ project }}</a>{% if created_by != 'Unowned' %} ({{ created_by }}){% endif %}</td>
+                <td>{{ raw_cost_month|print_amount }}</td>
+                <td>{{ cost_month|print_diff }}</td>
+                <td>{{ (raw_cost_month - cost_month)|print_diff }}</td>
+            </tr>
+          {%- endif -%}
+        {% endfor %}
+        </tbody>
+        <tfoot>
+        <tr>
+            <td>Grand total</td>
+            <td>{{ rows|sum_key('raw_cost_month')|print_amount }}</td>
+            <td>{{ rows|sum_key('cost_month')|print_amount }}</td>
+            <td>{{ ((rows|sum_key('raw_cost_month')) - (rows|sum_key('cost_month')))|print_amount }}</td>
+        </tr>
+        </tfoot>
+    </table>
+
 {% endblock main %}
